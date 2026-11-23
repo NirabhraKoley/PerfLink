@@ -47,7 +47,7 @@ if ($Uninstall) {
     return
 }
 
-if ($Repo -like 'NirabhraKoley/*' -and -not $From) { throw 'install.ps1: set $Repo to your GitHub "user/repo" before publishing.' }
+if ($Repo -notmatch '^[\w.-]+/[\w.-]+$' -and -not $From) { throw "install.ps1: -Repo must look like 'user/repo' (got '$Repo')." }
 
 Write-Host 'PerfLink installer' -ForegroundColor White
 Write-Host "Source: https://github.com/$Repo" -ForegroundColor DarkGray
