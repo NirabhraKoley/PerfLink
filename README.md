@@ -63,6 +63,14 @@ That's it. Windows asks for administrator permission once (click **Yes**); then 
 
 Run the same command again later to **update**; your settings are kept.
 
+**Update fails?** If the installer says the PerfLink folder *"doesn't look like a PerfLink install"* or that its files are *in use*, start fresh. First right-click the PerfLink tray icon and choose **Quit PerfLink**. Then delete the folder and run the install command again:
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\PerfLink" -Recurse -Force
+```
+
+This removes only PerfLink's program folder. The phone app and everything else stay, but your weather city must be set again.
+
 **Or on the phone:** download **[`PerfLink.apk`](../../releases/latest/download/PerfLink.apk)** and open it (Android will ask you to allow installing apps from your browser). Connect the phone to the same Wi-Fi as the PC, open PerfLink and tap your PC.
 
 **Next time:** nothing to do. PerfLink starts with Windows. (The Start menu / desktop shortcut starts it again if you quit it.)

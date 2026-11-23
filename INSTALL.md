@@ -170,6 +170,26 @@ irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/diagnose.ps1 |
 | GitHub panel says "not signed in" | Run `gh auth login` on the PC. |
 | Media card shows "Nothing playing" | Play something in an app that supports Windows media controls (Spotify, YouTube in a browser, etc.). |
 | `irm … \| iex` is blocked | Your organisation may block scripts. Use the manual install (Option B). |
+| Install/update fails: *"doesn't look like a PerfLink install"* or *"files are in use"* | Start fresh: see **Reset the PerfLink folder** below. |
+
+### Reset the PerfLink folder
+
+If an install or update keeps failing because of the existing PerfLink folder:
+
+1. Right-click the PerfLink tray icon and choose **Quit PerfLink**. If there's no icon, skip this step.
+2. In PowerShell, delete the folder:
+
+   ```powershell
+   Remove-Item "$env:LOCALAPPDATA\PerfLink" -Recurse -Force
+   ```
+
+3. Run the install command again:
+
+   ```powershell
+   irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/install.ps1 | iex
+   ```
+
+This deletes only PerfLink's program folder on the PC. The phone app, Python and adb are not touched. Your weather city has to be set again.
 
 ## 9. Build the app yourself (developers)
 
