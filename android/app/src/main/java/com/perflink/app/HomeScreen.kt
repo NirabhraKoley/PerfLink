@@ -119,14 +119,21 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onHostClick
         // Scale the clock to the space available (narrow 5" phones → large tablets)
         val clockSp = with(density) { minOf(maxHeight * 0.44f, maxWidth / 2.75f).toSp() }
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onHostClick() }.padding(vertical = 2.dp),
-            ) {
-                val dot = if (state.conn == Conn.Connected) Palette.good else Palette.warn
-                Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
-                Spacer(Modifier.width(6.dp))
-                Text(s.host ?: "", color = Palette.dim, fontSize = 11.sp, letterSpacing = 0.5.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onHostClick() }.padding(vertical = 2.dp),
+                ) {
+                    val dot = if (state.conn == Conn.Connected) Palette.good else Palette.warn
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.host ?: "", color = Palette.dim, fontSize = 11.sp, letterSpacing = 0.5.sp, maxLines = 1)
+                }
+                // This phone's battery (the app hides the phone's status bar)
+                phoneBattery()?.let { (pct, charging) ->
+                    Spacer(Modifier.width(12.dp))
+                    BatteryChip("Phone", pct, charging, null)
+                }
             }
             Row(verticalAlignment = Alignment.Top) {
                 Text("$hour12", color = HomeColors.clock, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
@@ -437,4 +444,57 @@ private fun SettingsDialog(city: String, onDismiss: () -> Unit, onCity: (String)
         confirmButton = { TextButton(onClick = { onCity(c) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+// ------------------------------------------------------------------ batteries
+/** This phone's battery (percent, charging), refreshed every 30 s. The app hides the status bar, so show it here. */
+@Composable
+private fun phoneBattery(): Pair<Int, Boolean>? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val state by produceState<Pair<Int, Boolean>?>(null) {
+        while (true) {
+            value = runCatching {
+                val i = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+                    ?: return@runCatching null
+                val level = i.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+                val scale = i.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100)
+                val status = i.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
+                val charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == android.os.BatteryManager.BATTERY_STATUS_FULL
+                if (level < 0 || scale <= 0) null else (level * 100 / scale) to charging
+            }.getOrNull()
+            delay(30_000)
+        }
+    }
+    return state
+}
+
+@Composable
+private fun BatteryChip(label: String, pct: Int, charging: Boolean, secsLeft: Double?) {
+    val color = when {
+        charging -> Palette.good
+        pct <= 20 -> Palette.bad
+        pct <= 40 -> Palette.warn
+        else -> Palette.good
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.width(18.dp).height(9.dp)) {
+            val nub = 2.dp.toPx()
+            val bodyW = size.width - nub
+            val st = 1.2.dp.toPx()
+            drawRoundRect(Palette.dim, size = Size(bodyW, size.height), cornerRadius = CornerRadius(2.dp.toPx()),
+                style = Stroke(width = st))
+            drawRect(Palette.dim, topLeft = Offset(bodyW, size.height * 0.3f), size = Size(nub, size.height * 0.4f))
+            val inner = (bodyW - st * 3) * (pct.coerceIn(0, 100) / 100f)
+            drawRoundRect(color, topLeft = Offset(st * 1.5f, st * 1.5f), size = Size(inner, size.height - st * 3),
+                cornerRadius = CornerRadius(1.dp.toPx()))
+        }
+        Spacer(Modifier.width(4.dp))
+        Text("$label $pct%" + if (charging) " ⚡" else "", color = Palette.dim, fontSize = 11.sp, maxLines = 1)
+        secsLeft?.let {
+            val m = (it / 60).toInt()
+            Text(" · ${if (m >= 60) "${m / 60}h ${m % 60}m" else "${m}m"} left", color = Palette.dim.copy(alpha = 0.7f),
+                fontSize = 11.sp, maxLines = 1)
+        }
+    }
 }
