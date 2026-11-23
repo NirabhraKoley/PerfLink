@@ -28,20 +28,6 @@ PACKAGE = "com.perflink.app"
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, "cache")
 DEFAULT_REPO = "NirabhraKoley/PerfLink"
-# Progress of the phone-app install, read by install.ps1 to tell the user to wait.
-STATUS = os.path.join(CACHE, "phone_app.json")
-
-
-def _status(serial: str, state: str, version: str | None = None, message: str | None = None) -> None:
-    """state: checking | downloading | installing | done | up_to_date | unauthorized | failed"""
-    try:
-        os.makedirs(CACHE, exist_ok=True)
-        with open(STATUS + ".tmp", "w", encoding="utf-8") as f:
-            json.dump({"t": time.time(), "serial": serial, "state": state, "version": version,
-                       "message": message}, f)
-        os.replace(STATUS + ".tmp", STATUS)
-    except OSError:
-        pass
 
 
 def find_adb() -> str | None:
@@ -108,7 +94,6 @@ class UsbTunnel:
                 if serial not in self._asked_auth:
                     self._asked_auth.add(serial)
                     print(f"[usb] phone {serial} is waiting for 'Allow USB debugging' on its screen")
-                    _status(serial, "unauthorized")
                     self.notify("PerfLink", "Phone connected: tap 'Allow' on the phone's "
                                             "'Allow USB debugging?' pop-up (tick 'Always allow').")
             self._asked_auth &= set(waiting)
@@ -169,29 +154,22 @@ class UsbTunnel:
 
     def _update_app(self, serial: str) -> None:
         try:
-            _status(serial, "checking")
             installed = self._installed_version(serial)
             info = self._latest_release()
             if not info:
-                _status(serial, "failed", message="couldn't reach GitHub to get the app")
                 return
             if installed and _version_tuple(installed) >= _version_tuple(info["version"]):
                 print(f"[usb] phone {serial}: PerfLink {installed} is up to date")
-                _status(serial, "up_to_date", installed)
                 return
-            _status(serial, "downloading", info["version"])
             apk = self._apk(info)
             if not apk:
-                _status(serial, "failed", info["version"], "the app download failed")
                 return
             what = f"Updating PerfLink {installed} → {info['version']}" if installed else f"Installing PerfLink {info['version']}"
             print(f"[usb] phone {serial}: {what}")
-            _status(serial, "installing", info["version"])
             r = self._run("-s", serial, "install", "-r", apk, timeout=180)
             text = (r.stdout + r.stderr).strip()
             if "Success" in text:
                 verb = "updated" if installed else "installed"
-                _status(serial, "done", info["version"], verb)
                 self.notify("PerfLink", f"Phone app {verb} (version {info['version']})")
                 if not installed:  # first install: open it so the phone connects right away
                     self._run("-s", serial, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity",
@@ -199,12 +177,8 @@ class UsbTunnel:
             elif "USER_RESTRICTED" in text or "INSTALL_CANCELED_BY_USER" in text:
                 self.notify("PerfLink", "The phone blocked the install. On the phone allow "
                                         "'Install via USB' in Developer options, then replug.")
-                _status(serial, "failed", info["version"], "the phone blocked it: allow 'Install via USB' "
-                                                           "in Developer options, then replug the phone")
                 self._checked.discard(serial)
             else:
                 print(f"[usb] install failed: {text[-200:]}")
-                _status(serial, "failed", info["version"], text[-120:] or "adb install failed")
         except Exception as e:  # noqa: BLE001
             print(f"[usb] app update error: {e}")
-            _status(serial, "failed", message=str(e))

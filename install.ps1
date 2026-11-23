@@ -182,6 +182,8 @@ Get-ChildItem (Split-Path $App) -Directory -Filter "$(Split-Path $App -Leaf).old
 # after PerfLink stops, so retry; if something still holds them, say what.
 $old = $null
 $hadBin = $false
+$pcKept = $false      # true: the PC part couldn't be updated now; the current version keeps running
+$pcWho = $null
 for ($try = 1; ; $try++) {
     try {
         if (Test-Path $App) {
@@ -192,112 +194,212 @@ for ($try = 1; ; $try++) {
     } catch {
         if ($try -ge 10) {
             $who = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-                Where-Object { $_.ExecutablePath -like "$App\*" -or $_.CommandLine -like "*$App*" } |
+                Where-Object { $_.ProcessId -ne $PID -and ($_.ExecutablePath -like "$App\*" -or $_.CommandLine -like "*$App*") } |
                 ForEach-Object { "$($_.Name) (pid $($_.ProcessId))" }
-            throw ("Couldn't replace $App because its files are in use" + $(if ($who) { " by: $($who -join ', ')" } else { '' }) +
-                   ". Right-click the PerfLink tray icon > Quit PerfLink, then run the command again.")
+            $pcWho = $who -join ', '
+            if (-not (Test-Path (Join-Path $App 'agent\perflink_agent.py'))) {   # nothing usable to keep
+                throw ("Couldn't replace $App because its files are in use" + $(if ($who) { " by: $pcWho" } else { '' }) +
+                       ". Restart the PC, then run the command again.")
+            }
+            $pcKept = $true
+            break
         }
         Stop-Agent
+        if ($try -ge 3) {   # anything else of PerfLink's still running from the folder (old helpers)
+            Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like 'powershell*.exe' -and $_.ProcessId -ne $PID -and $_.CommandLine -like "*$App\*" } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        }
         Start-Sleep 1
     }
 }
-Move-Item $src.FullName $App
-# marker: the uninstaller only ever deletes folders that carry it
-Set-Content (Join-Path $App '.perflink-install') "PerfLink install folder (created by install.ps1 on $(Get-Date -Format s)). The uninstaller deletes this folder." -Encoding utf8
-if ($old) {
-    # keep the already-downloaded helpers (PresentMon, sensor DLLs), then delete the old version
-    $oldBin = Join-Path $old 'agent\bin'
-    if (Test-Path (Join-Path $oldBin 'PresentMon.exe')) {
-        $hadBin = $true
-        Move-Item $oldBin (Join-Path $App 'agent\bin') -Force -ErrorAction SilentlyContinue
-        if (-not (Test-Path (Join-Path $App 'agent\bin\PresentMon.exe'))) {   # moved? else copy
-            Copy-Item $oldBin (Join-Path $App 'agent') -Recurse -Force -ErrorAction SilentlyContinue
+if ($pcKept) {
+    Warn "Couldn't update PerfLink on this PC right now: its files are in use$(if ($pcWho) { " by $pcWho" })."
+    Warn 'The current version keeps working. Restart the PC and run the command again to update it.'
+} else {
+    Move-Item $src.FullName $App
+    # marker: the uninstaller only ever deletes folders that carry it
+    Set-Content (Join-Path $App '.perflink-install') "PerfLink install folder (created by install.ps1 on $(Get-Date -Format s)). The uninstaller deletes this folder." -Encoding utf8
+    if ($old) {
+        # keep the already-downloaded helpers (PresentMon, sensor DLLs), then delete the old version
+        $oldBin = Join-Path $old 'agent\bin'
+        if (Test-Path (Join-Path $oldBin 'PresentMon.exe')) {
+            $hadBin = $true
+            Move-Item $oldBin (Join-Path $App 'agent\bin') -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path (Join-Path $App 'agent\bin\PresentMon.exe'))) {   # moved? else copy
+                Copy-Item $oldBin (Join-Path $App 'agent') -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
+        Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue   # anything still locked goes next time
     }
-    Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue   # anything still locked goes next time
-}
-foreach ($f in $keep.Keys) { Set-Content (Join-Path $App $f) $keep[$f] -Encoding utf8 }
-Done "Installed to $App"
+    foreach ($f in $keep.Keys) { Set-Content (Join-Path $App $f) $keep[$f] -Encoding utf8 }
+    Done "Installed to $App"
 
-# ------------------------------------------------------------------ 3. dependencies
-Step 'Installing dependencies (Python packages, PresentMon, LibreHardwareMonitor)'
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $App 'agent\setup.ps1') -Python $pyExe
-if ($LASTEXITCODE -ne 0) { throw 'Dependency setup failed (see the messages above).' }
-Set-Content (Join-Path $App 'agent\pythonw.txt') $pyw -Encoding ascii   # used by PerfLink.vbs
-# quick self-test: the chosen Python can load everything PerfLink needs
-$imp = & $pyExe -c "import psutil, websockets, clr, pycaw; print('ok')" 2>&1
-if ("$imp" -notmatch 'ok') { throw "Python packages are missing in $pyExe : $imp" }
-Done 'Dependencies ready'
+    # ------------------------------------------------------------------ 3. dependencies
+    Step 'Installing dependencies (Python packages, PresentMon, LibreHardwareMonitor)'
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $App 'agent\setup.ps1') -Python $pyExe
+    if ($LASTEXITCODE -ne 0) { throw 'Dependency setup failed (see the messages above).' }
+    Set-Content (Join-Path $App 'agent\pythonw.txt') $pyw -Encoding ascii   # used by PerfLink.vbs
+    # quick self-test: the chosen Python can load everything PerfLink needs
+    $imp = & $pyExe -c "import psutil, websockets, clr, pycaw; print('ok')" 2>&1
+    if ("$imp" -notmatch 'ok') { throw "Python packages are missing in $pyExe : $imp" }
+    Done 'Dependencies ready'
 
-# ------------------------------------------------------------------ 4. firewall
-Step 'Allowing the phone through the Windows Firewall'
-if ($SkipFirewall) { Done 'Skipped (-SkipFirewall)' }
-else {
-    Remove-NetFirewallRule -DisplayName 'PerfLink TCP', 'PerfLink UDP' -ErrorAction SilentlyContinue
-    New-NetFirewallRule -DisplayName 'PerfLink TCP' -Direction Inbound -Protocol TCP -LocalPort 47800 -Action Allow | Out-Null
-    New-NetFirewallRule -DisplayName 'PerfLink UDP' -Direction Inbound -Protocol UDP -LocalPort 47801 -Action Allow | Out-Null
-    Done 'Firewall rules added (TCP 47800, UDP 47801)'
-}
-
-# ------------------------------------------------------------------ 5. start with Windows (tray)
-Step 'Making PerfLink start with Windows (tray icon, no window)'
-$agentPy = Join-Path $App 'agent\perflink_agent.py'
-if ($SkipAutostart) { Done 'Skipped (-SkipAutostart)' }
-else {
-    $a = New-ScheduledTaskAction -Execute $pyw -Argument "`"$agentPy`" --tray" -WorkingDirectory (Join-Path $App 'agent')
-    $t = New-ScheduledTaskTrigger -AtLogOn -User $ForUser
-    $p = New-ScheduledTaskPrincipal -UserId $ForUser -LogonType Interactive -RunLevel Highest
-    $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-            -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable
-    Register-ScheduledTask -TaskName PerfLink -Action $a -Trigger $t -Principal $p -Settings $s `
-        -Description 'PerfLink: PC stats on your phone (tray icon)' -Force | Out-Null
-    Done "Starts automatically when $ForUser signs in (as administrator, no prompt)"
-}
-
-# ------------------------------------------------------------------ 6. shortcuts
-Step 'Creating shortcuts'
-if ($SkipShortcuts) { Done 'Skipped (-SkipShortcuts)' }
-else {
-    $ico = Join-Path $App 'agent\perflink.ico'
-    try { & $pyExe -c "import sys; sys.path.insert(0, r'$App\agent'); import tray; tray.save_icon(r'$ico')" 2>$null } catch {}
-    $shell = New-Object -ComObject WScript.Shell
-    foreach ($lnk in $StartLnk, $DeskLnk) {
-        $sc = $shell.CreateShortcut($lnk)
-        $sc.TargetPath = "$env:SystemRoot\System32\wscript.exe"
-        $sc.Arguments = "`"$(Join-Path $App 'PerfLink.vbs')`""
-        $sc.WorkingDirectory = $App
-        $sc.Description = 'PerfLink - PC stats on your phone'
-        $sc.IconLocation = if (Test-Path $ico) { $ico } else { "$env:SystemRoot\System32\imageres.dll,144" }
-        $sc.Save()
+    # ------------------------------------------------------------------ 4. firewall
+    Step 'Allowing the phone through the Windows Firewall'
+    if ($SkipFirewall) { Done 'Skipped (-SkipFirewall)' }
+    else {
+        Remove-NetFirewallRule -DisplayName 'PerfLink TCP', 'PerfLink UDP' -ErrorAction SilentlyContinue
+        New-NetFirewallRule -DisplayName 'PerfLink TCP' -Direction Inbound -Protocol TCP -LocalPort 47800 -Action Allow | Out-Null
+        New-NetFirewallRule -DisplayName 'PerfLink UDP' -Direction Inbound -Protocol UDP -LocalPort 47801 -Action Allow | Out-Null
+        Done 'Firewall rules added (TCP 47800, UDP 47801)'
     }
-    Done 'Start menu + desktop shortcut "PerfLink"'
-}
 
-# ------------------------------------------------------------------ Windows "Apps / Programs and Features" entry
-Step 'Registering PerfLink with Windows (Apps & features / Programs and Features)'
-$ver = (Select-String -Path $agentPy -Pattern '^VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
-$key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PerfLink'
-New-Item $key -Force | Out-Null
-$sizeKb = [int]((Get-ChildItem $App -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
-$un = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $App 'uninstall.ps1')`""
-$vals = @{
-    DisplayName = 'PerfLink'; DisplayVersion = $ver; Publisher = 'Nirabhra Koley'
-    DisplayIcon = $(if (Test-Path (Join-Path $App 'agent\perflink.ico')) { Join-Path $App 'agent\perflink.ico' } else { $pyw })
-    InstallLocation = $App; URLInfoAbout = "https://github.com/$Repo"; HelpLink = "https://github.com/$Repo/blob/main/INSTALL.md"
-    UninstallString = $un; QuietUninstallString = "$un -Quiet"
-    InstallDate = (Get-Date -Format 'yyyyMMdd'); Comments = 'PC stats and controls on your Android phone'
+    # ------------------------------------------------------------------ 5. start with Windows (tray)
+    Step 'Making PerfLink start with Windows (tray icon, no window)'
+    $agentPy = Join-Path $App 'agent\perflink_agent.py'
+    if ($SkipAutostart) { Done 'Skipped (-SkipAutostart)' }
+    else {
+        $a = New-ScheduledTaskAction -Execute $pyw -Argument "`"$agentPy`" --tray" -WorkingDirectory (Join-Path $App 'agent')
+        $t = New-ScheduledTaskTrigger -AtLogOn -User $ForUser
+        $p = New-ScheduledTaskPrincipal -UserId $ForUser -LogonType Interactive -RunLevel Highest
+        $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable
+        Register-ScheduledTask -TaskName PerfLink -Action $a -Trigger $t -Principal $p -Settings $s `
+            -Description 'PerfLink: PC stats on your phone (tray icon)' -Force | Out-Null
+        Done "Starts automatically when $ForUser signs in (as administrator, no prompt)"
+    }
+
+    # ------------------------------------------------------------------ 6. shortcuts
+    Step 'Creating shortcuts'
+    if ($SkipShortcuts) { Done 'Skipped (-SkipShortcuts)' }
+    else {
+        $ico = Join-Path $App 'agent\perflink.ico'
+        try { & $pyExe -c "import sys; sys.path.insert(0, r'$App\agent'); import tray; tray.save_icon(r'$ico')" 2>$null } catch {}
+        $shell = New-Object -ComObject WScript.Shell
+        foreach ($lnk in $StartLnk, $DeskLnk) {
+            $sc = $shell.CreateShortcut($lnk)
+            $sc.TargetPath = "$env:SystemRoot\System32\wscript.exe"
+            $sc.Arguments = "`"$(Join-Path $App 'PerfLink.vbs')`""
+            $sc.WorkingDirectory = $App
+            $sc.Description = 'PerfLink - PC stats on your phone'
+            $sc.IconLocation = if (Test-Path $ico) { $ico } else { "$env:SystemRoot\System32\imageres.dll,144" }
+            $sc.Save()
+        }
+        Done 'Start menu + desktop shortcut "PerfLink"'
+    }
+
+    # ------------------------------------------------------------------ Windows "Apps / Programs and Features" entry
+    Step 'Registering PerfLink with Windows (Apps & features / Programs and Features)'
+    $ver = (Select-String -Path $agentPy -Pattern '^VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+    $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PerfLink'
+    New-Item $key -Force | Out-Null
+    $sizeKb = [int]((Get-ChildItem $App -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
+    $un = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $App 'uninstall.ps1')`""
+    $vals = @{
+        DisplayName = 'PerfLink'; DisplayVersion = $ver; Publisher = 'Nirabhra Koley'
+        DisplayIcon = $(if (Test-Path (Join-Path $App 'agent\perflink.ico')) { Join-Path $App 'agent\perflink.ico' } else { $pyw })
+        InstallLocation = $App; URLInfoAbout = "https://github.com/$Repo"; HelpLink = "https://github.com/$Repo/blob/main/INSTALL.md"
+        UninstallString = $un; QuietUninstallString = "$un -Quiet"
+        InstallDate = (Get-Date -Format 'yyyyMMdd'); Comments = 'PC stats and controls on your Android phone'
+    }
+    foreach ($k in $vals.Keys) { Set-ItemProperty $key -Name $k -Value $vals[$k] }
+    foreach ($k in 'NoModify', 'NoRepair') { Set-ItemProperty $key -Name $k -Value 1 -Type DWord }
+    Set-ItemProperty $key -Name EstimatedSize -Value $sizeKb -Type DWord
+    Done "Listed as 'PerfLink $ver' - uninstall it from Settings > Apps or Control Panel like any app"
 }
-foreach ($k in $vals.Keys) { Set-ItemProperty $key -Name $k -Value $vals[$k] }
-foreach ($k in 'NoModify', 'NoRepair') { Set-ItemProperty $key -Name $k -Value 1 -Type DWord }
-Set-ItemProperty $key -Name EstimatedSize -Value $sizeKb -Type DWord
-Done "Listed as 'PerfLink $ver' - uninstall it from Settings > Apps or Control Panel like any app"
 
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
-# ------------------------------------------------------------------ 7. start
+$agentPy = Join-Path $App 'agent\perflink_agent.py'
+$apkUrl = "https://github.com/$Repo/releases/latest/download/PerfLink.apk"
+
+# ------------------------------------------------------------------ 7. phone app (USB)
+# Done here, while PerfLink is stopped, so the installer and PerfLink never install at the same time,
+# and so the phone is updated even when the PC part couldn't be.
+function Find-Adb {
+    $c = Get-Command adb -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    $list = @("$env:LOCALAPPDATA\Microsoft\WinGet\Links\adb.exe", "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe") +
+            @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
+    foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
+}
+# adb writes notes like "* daemon not running; starting now" to stderr, which Windows PowerShell 5.1
+# turns into errors under ErrorAction Stop. Run it through cmd so they never reach PowerShell.
+function Invoke-Adb([string]$argLine) { try { @(cmd /c "`"$script:adb`" $argLine 2>nul") } catch { @() } }
+function Get-Phones {
+    $all = Invoke-Adb 'devices' | Select-Object -Skip 1 | Where-Object { $_ -match "`t" }
+    [pscustomobject]@{
+        Ready   = @($all | Where-Object { $_ -match "`tdevice$" } | ForEach-Object { ($_ -split "`t")[0] })
+        Waiting = @($all | Where-Object { $_ -match "`tunauthorized$" } | ForEach-Object { ($_ -split "`t")[0] })
+    }
+}
+function ConvertTo-Version([string]$v) {
+    $n = @([regex]::Matches("$v", '\d+') | ForEach-Object { [int]$_.Value })
+    while ($n.Count -lt 2) { $n += 0 }
+    [version]($n[0..([Math]::Min(3, $n.Count - 1))] -join '.')
+}
+function Update-PhoneApp {
+    Step 'Phone app (USB)'
+    $script:adb = Find-Adb
+    if ($NoAdb -or -not $script:adb) { Done "adb isn't available - install the app on the phone from $apkUrl"; return }
+    $ph = Get-Phones
+    if ($ph.Waiting.Count -and -not $ph.Ready.Count) {
+        Warn "On the phone, tap 'Allow' on the 'Allow USB debugging?' pop-up (tick 'Always allow')..."
+        for ($i = 0; $i -lt 30 -and -not $ph.Ready.Count; $i++) { Start-Sleep 2; $ph = Get-Phones }
+    }
+    if (-not $ph.Ready.Count) {
+        if ($ph.Waiting.Count) { Warn "USB debugging wasn't allowed on the phone. Allow it and replug the phone: PerfLink then updates the app by itself." }
+        else { Done 'No phone plugged in. Plug it in any time (USB debugging on) and PerfLink installs or updates the app by itself.' }
+        return
+    }
+    $asset = $null
+    try {
+        $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'PerfLink-installer' }
+        $asset = $rel.assets | Where-Object { $_.name -like '*.apk' } | Select-Object -First 1
+        $latest = $rel.tag_name -replace '^[vV]', ''
+    } catch { }
+    if (-not $asset) { Warn "Couldn't get the phone app from GitHub - install it on the phone from $apkUrl"; return }
+    $apk = $null
+    foreach ($serial in $ph.Ready) {
+        $model = "$(Invoke-Adb "-s $serial shell getprop ro.product.model" | Select-Object -First 1)".Trim()
+        $name = if ($model) { $model } else { $serial }
+        $m = [regex]::Match(((Invoke-Adb "-s $serial shell dumpsys package com.perflink.app") -join "`n"), 'versionName=([\w.\-]+)')
+        $have = if ($m.Success) { $m.Groups[1].Value } else { $null }
+        if ($have -and (ConvertTo-Version $have) -ge (ConvertTo-Version $latest)) {
+            Done "$($name): PerfLink app is up to date (version $have)"
+            continue
+        }
+        if (-not $apk) {
+            $apk = Join-Path $env:TEMP "PerfLink-$latest.apk"
+            try { Invoke-WebRequest $asset.browser_download_url -OutFile $apk -UseBasicParsing }
+            catch { Warn "Couldn't download the phone app - install it on the phone from $apkUrl"; return }
+        }
+        Write-Host "    Wait, application is installing in your mobile ($name)" -ForegroundColor Yellow -NoNewline
+        $log = Join-Path $env:TEMP 'perflink-adb-install.txt'
+        $proc = Start-Process cmd -ArgumentList "/c `"`"$script:adb`" -s $serial install -r `"$apk`" > `"$log`" 2>&1`"" -WindowStyle Hidden -PassThru
+        $begin = Get-Date
+        while (-not $proc.HasExited -and ((Get-Date) - $begin).TotalMinutes -lt 5) { Start-Sleep 2; Write-Host '.' -ForegroundColor Yellow -NoNewline }
+        Write-Host ''
+        $out = "$(Get-Content $log -Raw -ErrorAction SilentlyContinue)"
+        if ($out -match 'Success') {
+            Done "$($name): PerfLink app $(if ($have) { "updated $have -> $latest" } else { "installed (version $latest)" })"
+            if (-not $have) { Invoke-Adb "-s $serial shell am start -n com.perflink.app/.MainActivity -e host 127.0.0.1" | Out-Null }
+        } elseif (-not $proc.HasExited) {
+            Warn "$($name): still installing - keep the phone plugged in; it finishes by itself."
+        } elseif ($out -match 'USER_RESTRICTED|CANCELED_BY_USER') {
+            Warn "$($name): the phone blocked the install. Turn on 'Install via USB' in Developer options, then replug the phone."
+        } else {
+            Warn "$($name): the app didn't install ($($out.Trim() -replace '\s+', ' ')). Install it on the phone from $apkUrl"
+        }
+    }
+    if ($apk) { Remove-Item $apk -Force -ErrorAction SilentlyContinue }
+}
+Update-PhoneApp
+
+# ------------------------------------------------------------------ 8. start
 if (-not $NoStart) {
     Step 'Starting PerfLink'
-    $startedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 2
     if (-not $SkipAutostart) { Start-ScheduledTask -TaskName PerfLink }
     else { Start-Process $pyw -ArgumentList "`"$agentPy`" --tray" -WorkingDirectory (Join-Path $App 'agent') }
     # Make sure it really started (it runs without a window, so a crash would otherwise go unnoticed)
@@ -314,12 +416,17 @@ if (-not $NoStart) {
     }
 }
 
-$apkUrl = "https://github.com/$Repo/releases/latest/download/PerfLink.apk"
 $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
        Where-Object { $_.PrefixOrigin -in 'Dhcp', 'Manual' -and $_.IPAddress -notlike '169.*' } |
        Select-Object -First 1).IPAddress
 Write-Host ''
-Write-Host 'All set!' -ForegroundColor Green
+if ($pcKept) {
+    Write-Host 'Phone part done - the PC part still needs an update.' -ForegroundColor Yellow
+    Write-Host '  PerfLink on this PC is still the previous version (its files were in use).'
+    Write-Host '  Restart the PC, then run the install command again to update it.'
+} else {
+    Write-Host 'All set!' -ForegroundColor Green
+}
 Write-Host '  Phone app: plug your phone into this PC with USB debugging allowed and PerfLink installs'
 Write-Host '             the app (and future updates) by itself. Or download it on the phone:'
 Write-Host "             $apkUrl"
@@ -327,59 +434,6 @@ Write-Host '  Then connect the phone to the same Wi-Fi as this PC, open PerfLink
 Write-Host "  (or type its IP: $ip)."
 Write-Host '  PerfLink now starts with Windows. Right-click its tray icon for options.'
 
-# ------------------------------------------------------------------ 8. phone plugged in? wait for its app
-# PerfLink installs/updates the phone app over USB by itself; agent\cache\phone_app.json says how far it got.
-function Find-Adb {
-    $c = Get-Command adb -ErrorAction SilentlyContinue
-    if ($c) { return $c.Source }
-    $list = @("$env:LOCALAPPDATA\Microsoft\WinGet\Links\adb.exe", "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe") +
-            @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
-    foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
-}
-$adb = if (-not $NoStart) { Find-Adb }
-# adb writes notes like "* daemon not running; starting now" to stderr, which Windows PowerShell 5.1
-# turns into errors under ErrorAction Stop. Run it through cmd so they never reach PowerShell.
-$phones = @()
-if ($adb) {
-    try { $phones = @(cmd /c "`"$adb`" devices 2>nul" | Select-Object -Skip 1 | Where-Object { $_ -match "`t(device|unauthorized)$" }) }
-    catch { $phones = @() }
-}
-if ($phones) {
-    $statusFile = Join-Path $App 'agent\cache\phone_app.json'
-    $begin = Get-Date
-    $waiting = $false; $askedAllow = $false
-    Write-Host ''
-    while (((Get-Date) - $begin).TotalMinutes -lt 5) {
-        $st = $null
-        try { $st = Get-Content $statusFile -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
-        if (-not $st -or $st.t -lt $startedAt) {          # PerfLink hasn't looked at the phone yet
-            if (((Get-Date) - $begin).TotalSeconds -gt 60) { break }
-            Start-Sleep 2; continue
-        }
-        $state = $st.state
-        if ($state -eq 'unauthorized' -and -not $askedAllow) {
-            Write-Host "  On the phone, tap 'Allow' on the 'Allow USB debugging?' pop-up." -ForegroundColor Yellow
-            $askedAllow = $true
-        }
-        elseif ($state -in 'downloading', 'installing') {
-            if (-not $waiting) { Write-Host '  Wait, application is installing in your mobile' -ForegroundColor Yellow -NoNewline; $waiting = $true }
-            else { Write-Host '.' -ForegroundColor Yellow -NoNewline }
-        }
-        elseif ($state -in 'done', 'up_to_date', 'failed') {
-            if ($waiting) { Write-Host '' }
-            if ($state -eq 'done') { Write-Host "  Phone app $($st.message) (version $($st.version)) - open PerfLink on the phone." -ForegroundColor Green }
-            elseif ($state -eq 'up_to_date') { Write-Host "  Phone app is already up to date (version $($st.version))." -ForegroundColor Green }
-            else { Write-Host "  Phone app was not installed: $($st.message)" -ForegroundColor Yellow
-                   Write-Host "  Install it on the phone from: $apkUrl" -ForegroundColor Yellow }
-            break
-        }
-        Start-Sleep 2
-    }
-    if ($waiting -and $state -notin 'done', 'up_to_date', 'failed') {
-        Write-Host ''
-        Write-Host '  The phone app is still installing - it will finish by itself; keep the phone plugged in.' -ForegroundColor Yellow
-    }
-}
 }
 catch {
     Write-Host ''

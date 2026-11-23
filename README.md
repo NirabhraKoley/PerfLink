@@ -61,7 +61,7 @@ That's it. Windows asks for administrator permission once (click **Yes**); then 
 
 **Phone app, automatically:** plug the phone into the PC with **USB debugging** allowed (once, in the phone's Developer options; on Xiaomi/Redmi also allow *Install via USB*). PerfLink then installs the app, and installs future updates by itself whenever the phone is plugged in.
 
-Run the same command again later to **update**; your settings are kept.
+Run the same command again later to **update**; your settings are kept. A phone plugged in by USB is updated at the same time. If PerfLink's files on the PC are in use, the installer still updates the phone, keeps the current PC version running and asks you to restart the PC and run the command again.
 
 **Update fails?** If the installer says the PerfLink folder *"doesn't look like a PerfLink install"* or that its files are *in use*, start fresh. First right-click the PerfLink tray icon and choose **Quit PerfLink**. Then delete the folder and run the install command again:
 
