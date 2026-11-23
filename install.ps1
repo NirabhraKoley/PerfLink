@@ -124,8 +124,12 @@ if (-not $py) {
     $py = Find-Python
     if (-not $py) { throw 'Python was installed but is not on PATH yet. Close this window, open a new PowerShell and run the install command again.' }
 }
-$pyw = (& $py -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))").Trim()
-Done "Using $(& $py --version)"
+# Pin ONE interpreter (full path) for everything: packages are installed into it and the
+# start-with-Windows task runs its pythonw.exe. ('py' and 'python' can be different Pythons.)
+$pyExe = (& $py -c "import sys; print(sys.executable)").Trim()
+$pyw = Join-Path (Split-Path $pyExe) 'pythonw.exe'
+if (-not (Test-Path $pyw)) { $pyw = $pyExe }
+Done "Using $(& $pyExe --version) at $pyExe"
 
 if (-not $NoAdb -and -not (Get-Command adb -ErrorAction SilentlyContinue) -and (Get-Command winget -ErrorAction SilentlyContinue)) {
     Step 'Installing Android Platform Tools (adb) - lets PerfLink install the phone app over USB'
@@ -166,8 +170,12 @@ Done "Installed to $App"
 
 # ------------------------------------------------------------------ 3. dependencies
 Step 'Installing dependencies (Python packages, PresentMon, LibreHardwareMonitor)'
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $App 'agent\setup.ps1')
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $App 'agent\setup.ps1') -Python $pyExe
 if ($LASTEXITCODE -ne 0) { throw 'Dependency setup failed (see the messages above).' }
+Set-Content (Join-Path $App 'agent\pythonw.txt') $pyw -Encoding ascii   # used by PerfLink.vbs
+# quick self-test: the chosen Python can load everything PerfLink needs
+$imp = & $pyExe -c "import psutil, websockets, clr, pycaw; print('ok')" 2>&1
+if ("$imp" -notmatch 'ok') { throw "Python packages are missing in $pyExe : $imp" }
 Done 'Dependencies ready'
 
 # ------------------------------------------------------------------ 4. firewall
@@ -200,7 +208,7 @@ Step 'Creating shortcuts'
 if ($SkipShortcuts) { Done 'Skipped (-SkipShortcuts)' }
 else {
     $ico = Join-Path $App 'agent\perflink.ico'
-    try { & $py -c "import sys; sys.path.insert(0, r'$App\agent'); import tray; tray.save_icon(r'$ico')" 2>$null } catch {}
+    try { & $pyExe -c "import sys; sys.path.insert(0, r'$App\agent'); import tray; tray.save_icon(r'$ico')" 2>$null } catch {}
     $shell = New-Object -ComObject WScript.Shell
     foreach ($lnk in $StartLnk, $DeskLnk) {
         $sc = $shell.CreateShortcut($lnk)
@@ -240,7 +248,18 @@ if (-not $NoStart) {
     Step 'Starting PerfLink'
     if (-not $SkipAutostart) { Start-ScheduledTask -TaskName PerfLink }
     else { Start-Process $pyw -ArgumentList "`"$agentPy`" --tray" -WorkingDirectory (Join-Path $App 'agent') }
-    Done 'Running in the background - look for the PerfLink icon next to the clock'
+    # Make sure it really started (it runs without a window, so a crash would otherwise go unnoticed)
+    $up = $false
+    for ($i = 0; $i -lt 30 -and -not $up; $i++) {
+        Start-Sleep 1
+        $up = [bool](Get-NetTCPConnection -LocalPort 47800 -State Listen -ErrorAction SilentlyContinue)
+    }
+    if ($up) { Done 'Running in the background - look for the PerfLink icon next to the clock (it may be under the ^ arrow)' }
+    else {
+        Warn "PerfLink didn't start. Last lines of its log ($(Join-Path $App 'agent\perflink.log')):"
+        Get-Content (Join-Path $App 'agent\perflink.log') -Tail 15 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "      $_" -ForegroundColor Yellow }
+        throw 'PerfLink could not start - please share a screenshot of this window.'
+    }
 }
 
 $apkUrl = "https://github.com/$Repo/releases/latest/download/PerfLink.apk"

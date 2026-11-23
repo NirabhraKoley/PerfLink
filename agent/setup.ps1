@@ -3,6 +3,9 @@
 #     * PresentMon (Intel, MIT license)               -> FPS / frame time
 #     * LibreHardwareMonitorLib (MPL-2.0) + its deps  -> GPU/CPU temperature, power, clocks
 #   Run from the repo root:   powershell -ExecutionPolicy Bypass -File agent\setup.ps1
+#   -Python <path to python.exe>  installs the packages into that exact interpreter (the
+#   installer passes the one PerfLink will run with; with several Pythons they may differ).
+param([string]$Python = 'python')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $bin  = Join-Path $here 'bin'
@@ -10,7 +13,9 @@ $tmp  = Join-Path $env:TEMP 'perflink-setup'
 New-Item -ItemType Directory -Force $bin, $tmp | Out-Null
 
 Write-Host '== Python packages ==' -ForegroundColor Cyan
-python -m pip install --upgrade -r (Join-Path $here 'requirements.txt')
+Write-Host "   into $(& $Python -c 'import sys; print(sys.executable)')"
+& $Python -m pip install --upgrade -r (Join-Path $here 'requirements.txt')
+if ($LASTEXITCODE -ne 0) { throw 'pip could not install the Python packages (see above).' }
 
 Write-Host '== PresentMon 2.6.0 ==' -ForegroundColor Cyan
 $pm = Join-Path $bin 'PresentMon.exe'

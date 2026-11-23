@@ -14,6 +14,7 @@ agent/config.json
 agent/*.log
 agent/*.log.old
 agent/perflink.ico
+agent/pythonw.txt
 
 # --- Android / Gradle build output and machine-specific files ---
 android/.gradle/
