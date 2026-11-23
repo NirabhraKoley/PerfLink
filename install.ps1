@@ -46,7 +46,7 @@ function Stop-Agent {
         Stop-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue
     }
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -in 'python.exe', 'pythonw.exe' -and $_.CommandLine -like '*perflink_agent.py*' } |
+        Where-Object { $_.Name -like 'python*.exe' -and $_.CommandLine -like '*perflink_agent.py*' } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     # PerfLink's FPS helper keeps running (and locks agent\bin) if only the agent is stopped
     Get-Process PresentMon -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$App\*" } |
@@ -161,9 +161,28 @@ Stop-Agent   # updating: the running agent locks files in agent\bin
 $keep = @{}
 foreach ($f in 'agent\config.json') { $p = Join-Path $App $f; if (Test-Path $p) { $keep[$f] = Get-Content $p -Raw } }
 $hadBin = Test-Path (Join-Path $App 'agent\bin\PresentMon.exe')
-if ($hadBin) { Move-Item (Join-Path $App 'agent\bin') (Join-Path $tmp 'bin-keep') -Force }
 Assert-SafeToReplace $App
-if (Test-Path $App) { Remove-Item $App -Recurse -Force }
+# Replace the old version. Files can stay locked for a moment after PerfLink stops, so retry;
+# if something still holds them, say what instead of a bare "being used by another process".
+for ($try = 1; ; $try++) {
+    try {
+        if ($hadBin -and (Test-Path (Join-Path $App 'agent\bin'))) {
+            Move-Item (Join-Path $App 'agent\bin') (Join-Path $tmp 'bin-keep') -Force -ErrorAction Stop
+        }
+        if (Test-Path $App) { Remove-Item $App -Recurse -Force -ErrorAction Stop }
+        break
+    } catch {
+        if ($try -ge 10) {
+            $who = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+                Where-Object { $_.ExecutablePath -like "$App\*" -or $_.CommandLine -like "*$App*" } |
+                ForEach-Object { "$($_.Name) (pid $($_.ProcessId))" }
+            throw ("Couldn't replace $App because its files are in use" + $(if ($who) { " by: $($who -join ', ')" } else { '' }) +
+                   ". Right-click the PerfLink tray icon > Quit PerfLink, then run the command again.")
+        }
+        Stop-Agent
+        Start-Sleep 1
+    }
+}
 Move-Item $src.FullName $App
 # marker: the uninstaller only ever deletes folders that carry it
 Set-Content (Join-Path $App '.perflink-install') "PerfLink install folder (created by install.ps1 on $(Get-Date -Format s)). The uninstaller deletes this folder." -Encoding utf8

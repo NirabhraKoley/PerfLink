@@ -31,18 +31,31 @@ if (-not $Elevated) {
 }
 
 # ------------------------------------------------------------------ elevated copy does the work
-# 1. stop PerfLink
-if (Get-ScheduledTask -TaskName PerfLink) { Stop-ScheduledTask -TaskName PerfLink }
-Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'python.exe', 'pythonw.exe' -and $_.CommandLine -like '*perflink_agent.py*' } |
+# Only remove what belongs to THIS install: a PC can have another PerfLink (e.g. a second copy or
+# a source checkout), whose start-up task, shortcuts and Apps entry must be left alone.
+$paths = @($App, (Resolve-Path $App -ErrorAction SilentlyContinue).Path,
+           (New-Object -ComObject Scripting.FileSystemObject).GetFolder($App).Path) | Where-Object { $_ } | Select-Object -Unique
+function Mine($text) { foreach ($p in $paths) { if ("$text" -like "*$p\*") { return $true } }; $false }
+$task = Get-ScheduledTask -TaskName PerfLink
+$ownTask = $task -and (Mine $task.Actions[0].Arguments)
+$reg = Get-ItemProperty $Key
+$ownReg = $reg -and (Mine "$($reg.InstallLocation)\")
+
+# 1. stop PerfLink running from this folder (and its FPS helper)
+if ($ownTask) { Stop-ScheduledTask -TaskName PerfLink }
+Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'python*.exe' -and (Mine $_.CommandLine) } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-Get-Process PresentMon | Where-Object { $_.Path -like "$App\*" } | Stop-Process -Force   # FPS helper
+Get-Process PresentMon | Where-Object { Mine $_.Path } | Stop-Process -Force
 Start-Sleep -Milliseconds 800
-# 2. auto-start, firewall
-Unregister-ScheduledTask -TaskName PerfLink -Confirm:$false
-Remove-NetFirewallRule -DisplayName 'PerfLink TCP', 'PerfLink UDP'
-# 3. shortcuts + Programs and Features entry
-Remove-Item (Join-Path ([Environment]::GetFolderPath('Programs')) 'PerfLink.lnk'), (Join-Path ([Environment]::GetFolderPath('Desktop')) 'PerfLink.lnk') -Force
-Remove-Item $Key -Recurse -Force
+# 2. start with Windows; firewall rules (shared) only when removing the registered install
+if ($ownTask) { Unregister-ScheduledTask -TaskName PerfLink -Confirm:$false }
+if ($ownReg -or -not $reg) { Remove-NetFirewallRule -DisplayName 'PerfLink TCP', 'PerfLink UDP' }
+# 3. shortcuts that start this install, and its Programs and Features entry
+$shell = New-Object -ComObject WScript.Shell
+foreach ($lnk in (Join-Path ([Environment]::GetFolderPath('Programs')) 'PerfLink.lnk'), (Join-Path ([Environment]::GetFolderPath('Desktop')) 'PerfLink.lnk')) {
+    if ((Test-Path $lnk) -and (Mine $shell.CreateShortcut($lnk).Arguments)) { Remove-Item $lnk -Force }
+}
+if ($ownReg) { Remove-Item $Key -Recurse -Force }
 # 4. the program folder: only a folder the installer created (it carries the .perflink-install marker,
 #    or is the default install folder of an older version), and never a source checkout (.git)
 $default = Join-Path $env:LOCALAPPDATA 'PerfLink'

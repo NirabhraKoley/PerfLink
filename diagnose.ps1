@@ -24,7 +24,7 @@ if ($task) {
 } else { Row 'Task' 'missing (PerfLink will not start with Windows)' $false }
 
 H 'Running now'
-$procs = Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'python.exe', 'pythonw.exe' -and $_.CommandLine -like '*perflink_agent.py*' }
+$procs = Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'python*.exe' -and $_.CommandLine -like '*perflink_agent.py*' }
 Row 'PerfLink process' $(if ($procs) { ($procs | ForEach-Object { "$($_.Name) pid $($_.ProcessId)$(if ($_.CommandLine -like '*--tray*') { ' (tray mode)' })" }) -join ', ' } else { 'not running' }) ([bool]$procs)
 $listen = Get-NetTCPConnection -LocalPort 47800 -State Listen
 Row 'Port 47800' $(if ($listen) { 'listening' } else { 'not listening' }) ([bool]$listen)
