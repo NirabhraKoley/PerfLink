@@ -24,7 +24,7 @@ Swipe left/right; the pages loop. A **Home** button sits top-right on every othe
 | `[2]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
 | `[3]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
 | `[4]` | **USB** | How many USB devices are plugged in (hubs counted separately), with type, port and plug-in time, plus USB drives and a plug/unplug feed. |
-| `[5]` | **Bluetooth & Wi-Fi** | How many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and a connect/disconnect feed; plus the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
+| `[5]` | **Bluetooth & Wi-Fi** | Two panels. Left: how many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and the latest connect/disconnect. Right: the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
 | `[6]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
 | `[7]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
 | `[8]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |

@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,67 +78,84 @@ fun BluetoothPage(state: UiState) {
             Text("Waiting for the PC…", color = Palette.dim, modifier = Modifier.align(Alignment.Center))
             return@Box
         }
-        val radioOn = b.radio == null || b.radio.equals("On", ignoreCase = true)
-        Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 22.dp)) {
-            // ---------------- left: devices
-            Column(Modifier.weight(2f).fillMaxHeight()) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
-                    Text("BLUETOOTH & WI-FI", color = BtBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                    Spacer(Modifier.width(10.dp))
-                    Text("devices paired with this PC", color = Palette.dim, fontSize = 12.sp)
-                }
-                if (b.devices.isEmpty()) {
-                    EmptyState(
-                        if (!radioOn) "Bluetooth is off on this PC" else "No Bluetooth devices are paired",
-                        if (!radioOn) "Turn it on in Windows: Settings → Devices → Bluetooth & other devices."
-                        else "Pair headphones, a mouse, a controller… in Windows Bluetooth settings and they'll appear here.",
-                    )
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(190.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 8.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(b.devices, key = { it.id }) { BtCard(it) }
-                    }
-                }
+        Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 22.dp)) {
+            Text("BLUETOOTH & NETWORK", color = Palette.dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                letterSpacing = 1.4.sp, modifier = Modifier.padding(bottom = 12.dp))
+            Row(Modifier.fillMaxSize()) {
+                // ---------------- left: Bluetooth
+                BluetoothPanel(b, Modifier.weight(1f).fillMaxHeight())
+                Spacer(Modifier.width(12.dp))
+                // ---------------- right: Wi-Fi or Ethernet
+                NetworkPanel(state.stats?.wifi, Modifier.weight(1f).fillMaxHeight())
             }
-            Spacer(Modifier.width(14.dp))
-            // ---------------- right: count + feed
-            Column(Modifier.weight(1f).fillMaxHeight().padding(top = 30.dp).verticalScroll(rememberScrollState())) {
-                Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x14FFFFFF))
-                        .border(1.dp, BtBlue.copy(alpha = 0.4f), RoundedCornerShape(14.dp)).padding(14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("${b.connectedCount}", color = Palette.text, fontSize = 46.sp, fontWeight = FontWeight.Light, lineHeight = 48.sp)
-                    Text(if (b.connectedCount == 1) "device connected" else "devices connected", color = Palette.text, fontSize = 13.sp)
-                    Text("${b.pairedCount} paired", color = Palette.dim, fontSize = 11.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x14FFFFFF)).padding(horizontal = 10.dp, vertical = 4.dp)) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(if (radioOn) BtGreen else BtRed))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (radioOn) "Bluetooth on" else "Bluetooth off", color = Palette.text, fontSize = 11.sp)
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                state.stats?.wifi?.let { NetworkCard(it) }
-                Spacer(Modifier.height(12.dp))
-                Text("RECENT", color = Palette.dim, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                Spacer(Modifier.height(4.dp))
-                if (b.events.isEmpty()) Text("Connect or disconnect a device to see it here", color = Palette.dim, fontSize = 12.sp)
-                b.events.take(10).forEach { e ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(if (e.kind == "connected") BtGreen else BtRed))
-                        Spacer(Modifier.width(8.dp))
-                        Text(e.text, color = Palette.text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f))
-                        Text(ago(System.currentTimeMillis() / 1000.0 - e.t), color = Palette.dim, fontSize = 11.sp)
-                    }
-                }
+        }
+    }
+}
+
+@Composable
+private fun Panel(accent: Color, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x12FFFFFF))
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(16.dp)).padding(14.dp),
+    ) { content() }
+}
+
+@Composable
+private fun PanelHeader(icon: String, title: String, accent: Color, trailing: @Composable () -> Unit = {}) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        BtGlyph(icon, 18.dp, accent)
+        Spacer(Modifier.width(8.dp))
+        Text(title, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp,
+            modifier = Modifier.weight(1f))
+        trailing()
+    }
+}
+
+@Composable
+private fun BluetoothPanel(b: BtState, modifier: Modifier) {
+    val radioOn = b.radio == null || b.radio.equals("On", ignoreCase = true)
+    Panel(BtBlue, modifier) {
+        PanelHeader(UsbIcons.BLUETOOTH, "BLUETOOTH", BtBlue) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x14FFFFFF)).padding(horizontal = 9.dp, vertical = 3.dp)) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(if (radioOn) BtGreen else BtRed))
+                Spacer(Modifier.width(5.dp))
+                Text(if (radioOn) "On" else "Off", color = Palette.text, fontSize = 11.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text("${b.connectedCount}", color = Palette.text, fontSize = 34.sp, fontWeight = FontWeight.Light, lineHeight = 36.sp)
+            Spacer(Modifier.width(8.dp))
+            Text((if (b.connectedCount == 1) "device connected" else "devices connected") + " · ${b.pairedCount} paired",
+                color = Palette.dim, fontSize = 12.sp, modifier = Modifier.padding(bottom = 5.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        if (b.devices.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                EmptyState(
+                    if (!radioOn) "Bluetooth is off on this PC" else "No Bluetooth devices are paired",
+                    if (!radioOn) "Turn it on in Windows: Settings → Devices → Bluetooth & other devices."
+                    else "Pair headphones, a mouse, a controller… in Windows Bluetooth settings.",
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(1),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+                items(b.devices, key = { it.id }) { BtCard(it) }
+            }
+        }
+        b.events.firstOrNull()?.let { e ->
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(if (e.kind == "connected") BtGreen else BtRed))
+                Spacer(Modifier.width(7.dp))
+                Text(e.text, color = Palette.dim, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f))
+                Text(ago(System.currentTimeMillis() / 1000.0 - e.t), color = Palette.dim, fontSize = 11.sp)
             }
         }
     }
@@ -205,47 +223,48 @@ private const val ETH_ICON = "M6 4h12a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-
 private val WifiTeal = Color(0xFF22D3EE)
 
 @Composable
-private fun NetworkCard(w: WifiState) {
-    val link = w.wifi.firstOrNull { it.connected }
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x14FFFFFF))
-            .border(1.dp, WifiTeal.copy(alpha = 0.35f), RoundedCornerShape(14.dp)).padding(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BtGlyph(if (link != null || w.wired.isEmpty()) WIFI_ICON else ETH_ICON, 16.dp, WifiTeal)
-            Spacer(Modifier.width(6.dp))
-            Text(if (link != null || w.wired.isEmpty()) "WI-FI" else "WIRED", color = WifiTeal, fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+private fun NetworkPanel(w: WifiState?, modifier: Modifier) {
+    val link = w?.wifi?.firstOrNull { it.connected }
+    val wired = w?.wired.orEmpty()
+    val showWifi = link != null || wired.isEmpty()
+    Panel(WifiTeal, modifier) {
+        PanelHeader(if (showWifi) WIFI_ICON else ETH_ICON, if (showWifi) "WI-FI" else "ETHERNET", WifiTeal) {
+            link?.signal?.let { SignalBars(it) }
         }
-        Spacer(Modifier.height(6.dp))
-        when {
-            link != null -> {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(link.ssid ?: "Hidden network", color = Palette.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    link.signal?.let { SignalBars(it) }
+        Spacer(Modifier.height(10.dp))
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            when {
+                w == null -> Text("Waiting for the PC…", color = Palette.dim, fontSize = 13.sp)
+                link != null -> {
+                    Text(link.ssid ?: "Hidden network", color = Palette.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    link.signal?.let { Text("Signal $it% · connected", color = Palette.dim, fontSize = 12.sp) }
+                    Spacer(Modifier.height(10.dp))
+                    NetRow("Standard", listOfNotNull(link.standard, wifiGen(link.standard)).joinToString(" · ").ifBlank { null })
+                    NetRow("Band", listOfNotNull(link.band, link.channel?.let { "channel $it" }).joinToString(" · ").ifBlank { null })
+                    NetRow("Speed", if (link.rxMbps != null || link.txMbps != null)
+                        "↓ ${f0(link.rxMbps)}  ↑ ${f0(link.txMbps)} Mbps" else null)
+                    NetRow("Security", link.security)
+                    NetRow("IP address", link.ip)
+                    NetRow("Adapter", link.adapter)
                 }
-                link.signal?.let { Text("Signal $it%", color = Palette.dim, fontSize = 11.sp) }
-                Spacer(Modifier.height(6.dp))
-                NetRow("Standard", listOfNotNull(link.standard, wifiGen(link.standard)).joinToString(" · ").ifBlank { null })
-                NetRow("Band", listOfNotNull(link.band, link.channel?.let { "ch $it" }).joinToString(" · ").ifBlank { null })
-                NetRow("Speed", if (link.rxMbps != null || link.txMbps != null)
-                    "↓ ${f0(link.rxMbps)} · ↑ ${f0(link.txMbps)} Mbps" else null)
-                NetRow("Security", link.security)
-                NetRow("IP", link.ip)
-                NetRow("Adapter", link.adapter)
-            }
-            w.wired.isNotEmpty() -> {
-                w.wired.forEach { e ->
-                    Text(e.iface, color = Palette.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    NetRow("Speed", e.speedMbps?.let { if (it >= 1000) "${f1(it / 1000)} Gbps" else "${f0(it)} Mbps" })
-                    NetRow("IP", e.ip)
+                wired.isNotEmpty() -> {
+                    wired.forEachIndexed { i, e ->
+                        if (i > 0) Spacer(Modifier.height(10.dp))
+                        Text(e.iface, color = Palette.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                        Text("Wired · connected", color = Palette.dim, fontSize = 12.sp)
+                        Spacer(Modifier.height(10.dp))
+                        NetRow("Link speed", e.speedMbps?.let { if (it >= 1000) "${f1(it / 1000)} Gbps" else "${f0(it)} Mbps" })
+                        NetRow("IP address", e.ip)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(if (!w.available) "Wi-Fi: this PC has no Wi-Fi (or it's turned off)" else "Wi-Fi: not connected",
+                        color = Palette.dim, fontSize = 11.sp)
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(if (!w.available) "This PC has no Wi-Fi (or Wi-Fi is off)" else "Wi-Fi not connected",
-                    color = Palette.dim, fontSize = 11.sp)
+                else -> Text(if (!w.available) "This PC has no Wi-Fi or wired connection" else "Not connected to Wi-Fi",
+                    color = Palette.dim, fontSize = 13.sp)
             }
-            else -> Text(if (!w.available) "No Wi-Fi on this PC" else "Not connected to Wi-Fi", color = Palette.dim, fontSize = 12.sp)
         }
     }
 }
@@ -253,9 +272,9 @@ private fun NetworkCard(w: WifiState) {
 @Composable
 private fun NetRow(k: String, v: String?) {
     if (v == null) return
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(k, color = Palette.dim, fontSize = 11.sp, modifier = Modifier.width(64.dp))
-        Text(v, color = Palette.text, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(k, color = Palette.dim, fontSize = 13.sp, modifier = Modifier.width(92.dp))
+        Text(v, color = Palette.text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
