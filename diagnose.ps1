@@ -47,6 +47,25 @@ if ($adb) {
     } else { Row 'Phone' 'none (plug it in with USB debugging on)' $false }
 }
 
+H 'Bluetooth'
+$bt = @(Get-PnpDevice -Class Bluetooth)
+foreach ($d in ($bt | Where-Object { $_.InstanceId -notmatch '^(BTHENUM|BTHLE)\\' -and $_.InstanceId -notmatch '^(BTH|SWD)\\' })) {
+    Row 'Adapter' "$($d.FriendlyName) [$($d.Status), present=$($d.Present)]" ($d.Status -eq 'OK')
+}
+foreach ($d in ($bt | Where-Object { $_.InstanceId -match '^(BTHENUM|BTHLE)\\DEV_' })) {
+    $c = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName '{83DA6326-97A6-4088-9453-A1923F573B29} 15').Data
+    Row 'Paired device' "$($d.FriendlyName) [$(($d.InstanceId -split '\\')[0])] connected=$c status=$($d.Status) present=$($d.Present)" ([bool]$c)
+}
+$svc = $bt | Where-Object { $_.InstanceId -match '^BTHENUM\\\{' -and $_.Present }
+Row 'Active Bluetooth services' (($svc | ForEach-Object { $_.FriendlyName } | Select-Object -Unique) -join ', ')
+try {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    [void][Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType = WindowsRuntime]
+    $m = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1
+    $t = $m.MakeGenericMethod([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]]).Invoke($null, @([Windows.Devices.Radios.Radio]::GetRadiosAsync()))
+    if ($t.Wait(4000)) { Row 'Radios' (($t.Result | ForEach-Object { "$($_.Kind)=$($_.State)" }) -join ', ') } else { Row 'Radios' 'no answer in 4 s' $false }
+} catch { Row 'Radios' "error: $_" $false }
+
 H 'Network'
 Row 'Firewall rules' $(if (Get-NetFirewallRule -DisplayName 'PerfLink*') { 'present' } else { 'missing' }) ([bool](Get-NetFirewallRule -DisplayName 'PerfLink*'))
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -in 'Dhcp', 'Manual' -and $_.IPAddress -notlike '169.*' } | Select-Object -First 1).IPAddress

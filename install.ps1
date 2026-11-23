@@ -308,7 +308,13 @@ function Find-Adb {
     foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
 }
 $adb = if (-not $NoStart) { Find-Adb }
-$phones = if ($adb) { @((& $adb devices 2>$null) | Select-Object -Skip 1 | Where-Object { $_ -match "`t(device|unauthorized)$" }) }
+# adb writes notes like "* daemon not running; starting now" to stderr, which Windows PowerShell 5.1
+# turns into errors under ErrorAction Stop. Run it through cmd so they never reach PowerShell.
+$phones = @()
+if ($adb) {
+    try { $phones = @(cmd /c "`"$adb`" devices 2>nul" | Select-Object -Skip 1 | Where-Object { $_ -match "`t(device|unauthorized)$" }) }
+    catch { $phones = @() }
+}
 if ($phones) {
     $statusFile = Join-Path $App 'agent\cache\phone_app.json'
     $begin = Get-Date
