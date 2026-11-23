@@ -71,6 +71,12 @@ if ($App -and $isInstall -and -not (Test-Path (Join-Path $App '.git'))) {
     }
 }
 
+#    plus old versions an update couldn't delete at the time (PerfLink.old-<date>)
+if ($App -and $isInstall) {
+    Get-ChildItem (Split-Path $App) -Directory -Filter "$(Split-Path $App -Leaf).old-*" |
+        Where-Object { -not (Test-Path (Join-Path $_.FullName '.git')) } | ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
+}
+
 if (-not $Quiet) {
     Add-Type -AssemblyName System.Windows.Forms
     [void][System.Windows.Forms.MessageBox]::Show('PerfLink has been removed from this PC.' + "`n`n" +

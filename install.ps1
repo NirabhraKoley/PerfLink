@@ -38,7 +38,15 @@ function Is-Admin { ([Security.Principal.WindowsPrincipal][Security.Principal.Wi
 function Assert-SafeToReplace($dir) {
     if (-not (Test-Path $dir)) { return }
     if (Test-Path (Join-Path $dir '.git')) { throw "Refusing to delete '$dir': it is a source checkout (.git found). Use -InstallDir for a separate install folder." }
-    if (-not (Test-Path (Join-Path $dir 'agent\perflink_agent.py'))) { throw "Refusing to delete '$dir': it doesn't look like a PerfLink install." }
+    # A PerfLink folder, even one an interrupted update left half-deleted, still has one of these;
+    # an empty folder is fine too. Anything else is someone else's folder: leave it alone.
+    $signs = '.perflink-install', 'PerfLink.vbs', 'agent\perflink_agent.py', 'agent\usb_tunnel.py', 'agent\bluetooth.ps1',
+             'agent\wifi.ps1', 'agent\perflink.log', 'agent\pythonw.txt', 'agent\perflink.ico', 'agent\bin\PresentMon.exe',
+             'agent\__pycache__\perflink_agent.*.pyc', 'agent\__pycache__\usb_tunnel.*.pyc', 'agent\cache\phone_app.json'
+    $isPerfLink = $signs | Where-Object { Test-Path (Join-Path $dir $_) } | Select-Object -First 1
+    # no files at all (only empty folders left) counts as empty
+    $isEmpty = -not (Get-ChildItem $dir -Recurse -File -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $isPerfLink -and -not $isEmpty) { throw "Refusing to delete '$dir': it doesn't look like a PerfLink install." }
 }
 function Stop-Agent {
     # (not schtasks.exe: under ErrorAction Stop its "task not found" message aborted the install)
@@ -164,16 +172,22 @@ Stop-Agent   # updating: the running agent locks files in agent\bin
 # keep the user's settings (weather city) and already-downloaded helpers when updating
 $keep = @{}
 foreach ($f in 'agent\config.json') { $p = Join-Path $App $f; if (Test-Path $p) { $keep[$f] = Get-Content $p -Raw } }
-$hadBin = Test-Path (Join-Path $App 'agent\bin\PresentMon.exe')
 Assert-SafeToReplace $App
-# Replace the old version. Files can stay locked for a moment after PerfLink stops, so retry;
-# if something still holds them, say what instead of a bare "being used by another process".
+# leftovers of earlier updates whose old folder couldn't be deleted at the time
+Get-ChildItem (Split-Path $App) -Directory -Filter "$(Split-Path $App -Leaf).old-*" -ErrorAction SilentlyContinue |
+    Where-Object { -not (Test-Path (Join-Path $_.FullName '.git')) } |
+    ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+# Replace the old version. First RENAME the old folder: that either fully works or changes nothing,
+# so a locked file can never leave a half-deleted install behind. Files can stay locked for a moment
+# after PerfLink stops, so retry; if something still holds them, say what.
+$old = $null
+$hadBin = $false
 for ($try = 1; ; $try++) {
     try {
-        if ($hadBin -and (Test-Path (Join-Path $App 'agent\bin'))) {
-            Move-Item (Join-Path $App 'agent\bin') (Join-Path $tmp 'bin-keep') -Force -ErrorAction Stop
+        if (Test-Path $App) {
+            $old = "$App.old-$(Get-Date -Format yyyyMMddHHmmss)"
+            Rename-Item $App (Split-Path $old -Leaf) -ErrorAction Stop
         }
-        if (Test-Path $App) { Remove-Item $App -Recurse -Force -ErrorAction Stop }
         break
     } catch {
         if ($try -ge 10) {
@@ -190,7 +204,18 @@ for ($try = 1; ; $try++) {
 Move-Item $src.FullName $App
 # marker: the uninstaller only ever deletes folders that carry it
 Set-Content (Join-Path $App '.perflink-install') "PerfLink install folder (created by install.ps1 on $(Get-Date -Format s)). The uninstaller deletes this folder." -Encoding utf8
-if ($hadBin) { Move-Item (Join-Path $tmp 'bin-keep') (Join-Path $App 'agent\bin') -Force }
+if ($old) {
+    # keep the already-downloaded helpers (PresentMon, sensor DLLs), then delete the old version
+    $oldBin = Join-Path $old 'agent\bin'
+    if (Test-Path (Join-Path $oldBin 'PresentMon.exe')) {
+        $hadBin = $true
+        Move-Item $oldBin (Join-Path $App 'agent\bin') -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path (Join-Path $App 'agent\bin\PresentMon.exe'))) {   # moved? else copy
+            Copy-Item $oldBin (Join-Path $App 'agent') -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue   # anything still locked goes next time
+}
 foreach ($f in $keep.Keys) { Set-Content (Join-Path $App $f) $keep[$f] -Encoding utf8 }
 Done "Installed to $App"
 
