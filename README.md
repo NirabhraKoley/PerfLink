@@ -1,12 +1,12 @@
 # PerfLink
 
-**Your Windows PC's live stats and controls on an Android phone.** FPS, frame time, GPU/CPU load, temperature and power, network, processes, USB devices, media, OBS and quick actions, on a full-screen landscape dashboard you can keep beside your monitor.
+**Your Windows PC's live stats and controls on an Android phone.** FPS, frame time, GPU/CPU load, temperature and power, network, processes, USB and Bluetooth devices, Wi-Fi, media, OBS and quick actions, on a full-screen landscape dashboard you can keep beside your monitor.
 
 ```
  PC (Windows)                                    Phone (Android)
  ┌────────────────────────────────┐  Wi-Fi/LAN   ┌──────────────────────────┐
  │ agent/perflink_agent.py        │ ───────────▶ │ PerfLink app             │
- │  PresentMon  → FPS, frame time │  WebSocket   │  8 swipeable pages       │
+ │  PresentMon  → FPS, frame time │  WebSocket   │  9 swipeable pages       │
  │  LibreHWMon  → GPU/CPU sensors │  :47800      │  auto-discovers the PC   │
  │  psutil      → CPU, RAM, net   │  UDP :47801  │  or connect over USB     │
  │  WinRT / OBS → media, OBS      │  (discovery) │                          │
@@ -24,11 +24,14 @@ Swipe left/right; the pages loop. A **Home** button sits top-right on every othe
 | `[2]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
 | `[3]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
 | `[4]` | **USB** | How many USB devices are plugged in (hubs counted separately), with type, port and plug-in time, plus USB drives and a plug/unplug feed. |
-| `[5]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
-| `[6]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
-| `[7]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
+| `[5]` | **Bluetooth & Wi-Fi** | How many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and a connect/disconnect feed; plus the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
+| `[6]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
+| `[7]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
+| `[8]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
 
-A pop-up appears on every page when a USB device is plugged in or removed.
+A pop-up appears on every page when a USB device is plugged in or removed, or a Bluetooth device connects or disconnects.
+
+On the PC, PerfLink runs quietly in the background with an **icon next to the clock** (right-click it for status, *Start with Windows*, log and *Quit*), and **starts automatically when you sign in to Windows**.
 
 ## Requirements
 
@@ -48,21 +51,23 @@ GPU sensors are read through LibreHardwareMonitor and work with AMD, NVIDIA and 
 irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/install.ps1 | iex
 ```
 
-That's it. The installer:
-1. installs Python 3.12 with winget if Python isn't already there
+That's it. Windows asks for administrator permission once (click **Yes**); then the installer:
+1. installs Python 3.12 and Android Platform Tools (adb) with winget if they're missing
 2. downloads PerfLink into `%LOCALAPPDATA%\PerfLink`
 3. installs the Python packages, [PresentMon](https://github.com/GameTechDev/PresentMon) and [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
-4. opens the Windows Firewall for PerfLink's two ports (one admin prompt: click **Yes**)
-5. adds **PerfLink** to the Start menu and desktop, and starts it
-6. installs the phone app too, if a phone is plugged in with USB debugging and `adb` is installed
+4. opens the Windows Firewall for PerfLink's two ports
+5. makes PerfLink **start with Windows**, in the background with a **tray icon** (no window, no prompts)
+6. adds **PerfLink** to the Start menu and desktop, and starts it
+
+**Phone app, automatically:** plug the phone into the PC with **USB debugging** allowed (once, in the phone's Developer options; on Xiaomi/Redmi also allow *Install via USB*). PerfLink then installs the app, and installs future updates by itself whenever the phone is plugged in.
 
 Run the same command again later to **update**; your settings are kept.
 
-**On the phone:** download **[`PerfLink.apk`](../../releases/latest/download/PerfLink.apk)** and open it (Android will ask you to allow installing apps from your browser). Connect the phone to the same Wi-Fi as the PC, open PerfLink and tap your PC.
+**Or on the phone:** download **[`PerfLink.apk`](../../releases/latest/download/PerfLink.apk)** and open it (Android will ask you to allow installing apps from your browser). Connect the phone to the same Wi-Fi as the PC, open PerfLink and tap your PC.
 
-**Next time:** just open **PerfLink** from the Start menu or desktop.
+**Next time:** nothing to do. PerfLink starts with Windows. (The Start menu / desktop shortcut starts it again if you quit it.)
 
-**Uninstall:**
+**Uninstall:** like any app: **Settings → Apps → PerfLink → Uninstall** (also in Control Panel and in the tray icon's menu). Or:
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/install.ps1))) -Uninstall
@@ -132,12 +137,18 @@ agent/                     PC side (Python)
   extras.py                media, volume, weather
   processes.py             process list + icons
   usb_devices.py           USB devices + plug/unplug feed
+  usb_tunnel.py            USB link to the phone + automatic app install/updates
+  bluetooth.py / .ps1      Bluetooth devices, connection state, battery
+  wifi.py                  Wi-Fi / wired connection details
+  tray.py, autostart.py    tray icon + start with Windows
   ai_status.py             Claude Code sessions, AI apps, GitHub
   obs_control.py           OBS WebSocket client
   launcher.py              the 12 launcher actions
   setup.ps1                installs dependencies
 android/                   Android app (Kotlin, Jetpack Compose)
-start_agent.bat            start the agent
+PerfLink.vbs               start PerfLink in the background (used by the shortcuts)
+uninstall.ps1              removes PerfLink (used by Settings > Apps and the tray menu)
+start_agent.bat            start the agent in a console window
 start_agent_admin.bat      start the agent as administrator
 ```
 

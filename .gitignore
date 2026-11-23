@@ -2,6 +2,7 @@
 _downloads/
 _toolchain/
 agent/bin/
+agent/cache/
 
 # --- Python ---
 __pycache__/
@@ -11,6 +12,8 @@ __pycache__/
 # --- per-user agent state (weather city, etc.) ---
 agent/config.json
 agent/*.log
+agent/*.log.old
+agent/perflink.ico
 
 # --- Android / Gradle build output and machine-specific files ---
 android/.gradle/

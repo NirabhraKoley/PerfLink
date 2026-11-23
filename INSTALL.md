@@ -5,7 +5,7 @@ PerfLink has two parts:
 | Part | Runs on | What it does |
 |---|---|---|
 | **PerfLink agent** | your Windows PC | reads FPS, GPU/CPU sensors, network, processes, USB devices, media and OBS, and sends them to the phone |
-| **PerfLink app** | your Android phone | shows everything on 8 swipeable pages and sends controls back to the PC |
+| **PerfLink app** | your Android phone | shows everything on 9 swipeable pages and sends controls back to the PC |
 
 You install both once. Setup takes about 5 minutes.
 
@@ -20,7 +20,7 @@ You install both once. Setup takes about 5 minutes.
 | PC | **Windows 10 or 11** (64-bit) | |
 | PC | **Python 3.10 or newer** | The one-command installer installs Python 3.12 for you if it's missing. Manual installs: get it from [python.org](https://www.python.org/downloads/) and tick **"Add python.exe to PATH"**. |
 | PC | **Internet connection** | Only during installation, to download PerfLink and its helpers. |
-| PC | **Administrator permission** | One prompt to open the Windows Firewall for the phone. FPS and CPU temperature also need it while running. |
+| PC | **Administrator permission** | One prompt when installing. After that PerfLink starts with Windows with admin rights (needed for FPS and CPU temperature) without asking again. |
 | Phone | **Android 8.0 or newer** | |
 | Both | **Same Wi-Fi / router**, or a **USB cable** | The PC can be on Ethernet as long as it's the same router. |
 
@@ -40,7 +40,7 @@ The installer (or `agent\setup.ps1`) downloads these into PerfLink's own folder:
 |---|---|---|
 | **OBS Studio 28+** | OBS page (preview, record, stream, scenes, audio) | [obsproject.com](https://obsproject.com/). Then in OBS: *Tools → WebSocket Server Settings → tick Enable WebSocket server → OK*. |
 | **GitHub CLI** | GitHub panel on the Sessions page | `winget install GitHub.cli`, then `gh auth login` |
-| **Android Platform Tools (adb)** | USB mode (connect by cable, no Wi-Fi) and installing the app from the PC | `winget install Google.PlatformTools` |
+| **Android Platform Tools (adb)** | USB mode and automatic phone-app install/updates | installed automatically by the one-command installer |
 | **Claude desktop app / Claude Code** | Claude sessions on the Sessions page | [claude.ai/download](https://claude.ai/download) |
 
 ---
@@ -56,8 +56,10 @@ The installer (or `agent\setup.ps1`) downloads these into PerfLink's own folder:
    irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/install.ps1 | iex
    ```
 
-3. Wait about a minute. When Windows asks *"Do you want to allow this app to make changes?"*, click **Yes**. That's the firewall step, and the agent's start-up.
-4. When you see **"All set!"**, the agent is running. A **PerfLink** shortcut is now on your desktop and in the Start menu.
+3. Windows asks *"Do you want to allow this app to make changes?"*: click **Yes**. A new window shows the progress (about a minute).
+4. When you see **"All set!"**, PerfLink is running in the background. Look for its **icon next to the clock**. It now **starts automatically every time you sign in to Windows**, and a **PerfLink** shortcut is on your desktop and in the Start menu.
+
+Right-click the tray icon for: status (PC address, connected phones), **Start with Windows** on/off, **Open PerfLink log**, **Open PerfLink folder**, **Quit PerfLink**.
 
 The installer puts everything in `%LOCALAPPDATA%\PerfLink` and changes nothing else on your PC.
 
@@ -91,7 +93,7 @@ The installer puts everything in `%LOCALAPPDATA%\PerfLink` and changes nothing e
 2. Open the downloaded file. Android will say installing apps from this source isn't allowed: tap **Settings**, switch on **Allow from this source**, go back and tap **Install**.
 3. Open **PerfLink**. It runs full screen in landscape.
 
-> **Tip:** if the phone is plugged into the PC with USB debugging on (see step 5) and adb is installed, the one-command installer installs the app on the phone for you.
+> **Automatic install:** plug the phone into the PC with USB debugging allowed (see step 5). PerfLink installs the app by itself within a few seconds and opens it, and from then on installs **every new version automatically** whenever the phone is plugged in. You'll see a notification by the clock when it does.
 
 ---
 
@@ -115,32 +117,26 @@ USB mode is the most stable connection and doesn't need the firewall rules.
 2. *Settings → Additional settings / System → Developer options* → turn on **USB debugging**.
 3. Plug the phone into the PC and tap **Allow** on the *"Allow USB debugging?"* pop-up (tick *Always allow from this computer*).
 
-**PC setup:** install adb once:
-```powershell
-winget install Google.PlatformTools
-```
+4. On Xiaomi/Redmi/POCO phones also turn on **Install via USB** in Developer options (needed for the automatic app install).
 
-**Connect:**
-```powershell
-adb reverse tcp:47800 tcp:47800
-```
-```powershell
-adb shell am start -n com.perflink.app/.MainActivity -e host 127.0.0.1
-```
-(Or type `127.0.0.1` in the app's *Connect manually* box.) After that, the agent re-creates the USB link by itself whenever you unplug and replug the cable.
+**Connect:** just plug it in. PerfLink sets up the USB link by itself (and again after every replug), installs or updates the app, and opens it. If the app is already open, type `127.0.0.1` in *Connect manually*.
 
 ---
 
 ## 6. Everyday use
 
-- **Start:** open **PerfLink** from the desktop or Start menu on the PC, then open the app on the phone.
+- **Start:** nothing to do on the PC (PerfLink starts with Windows). Just open the app on the phone. If you quit PerfLink, start it again from the desktop or Start menu.
 - **Pages:** swipe left/right; they loop. The **🏠 button** (top-right) jumps back to Home.
 - **Weather city:** tap the PC name at the top-left of the Home page.
 - **Update:** run the same one-command install again. Your settings are kept.
 
 ## 7. Uninstall
 
-PC (removes the program, shortcuts and firewall rules; Python stays installed):
+PC: like any app. Either:
+- **Settings → Apps** (or **Control Panel → Programs and Features**) → **PerfLink** → **Uninstall**, or
+- right-click the PerfLink tray icon → **Uninstall PerfLink…**
+
+This removes the program, its auto-start, tray icon, firewall rules and shortcuts (Python and adb stay installed). Or from PowerShell:
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/install.ps1))) -Uninstall
@@ -155,8 +151,10 @@ Phone: long-press the PerfLink icon → **Uninstall**.
 | Problem | Fix |
 |---|---|
 | Phone doesn't find the PC | Same Wi-Fi? (Not mobile data or a guest network.) Firewall rules added? Type the PC's IP manually. |
-| Stuck on "Connecting/Reconnecting to the PC…" | Is the agent running on the PC? Over USB: is the cable in and USB debugging allowed? The app retries every few seconds by itself. |
-| FPS shows **N/A** | Start the agent as administrator (`start_agent_admin.bat`, or the PerfLink shortcut). FPS follows the window in front, so click into the game. |
+| Stuck on "Connecting/Reconnecting to the PC…" | Is the PerfLink icon next to the clock? If not, start PerfLink from the desktop. Over USB: is the cable in and USB debugging allowed? The app retries every few seconds by itself. |
+| Phone app didn't install by itself | USB debugging allowed on the phone (and *Install via USB* on Xiaomi)? Unplug and replug the cable. Right-click the tray icon → *Open PerfLink log* to see why. |
+| Bluetooth page shows "Bluetooth is off" | Turn Bluetooth on in Windows Settings. Devices must be paired with the PC to appear. |
+| FPS shows **N/A** | PerfLink needs administrator rights for FPS: install it with the one-command installer (it sets that up), or start it with `start_agent_admin.bat`. FPS follows the window in front, so click into the game. |
 | CPU TEMP shows **N/A** | Needs administrator. Start with `start_agent_admin.bat`. |
 | FRAME GEN LAG / UPSCALE UPGRADE show **N/A** | Normal. Only AMD's own driver can read those. |
 | `python` is not recognized | Python isn't on PATH. Reinstall it and tick **"Add python.exe to PATH"**, or use the one-command installer. |

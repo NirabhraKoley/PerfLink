@@ -44,7 +44,7 @@ private val UsbGreen = Color(0xFF22C55E)
 private val UsbRed = Color(0xFFF87171)
 
 /** 24×24 line icons for each device type. */
-private object UsbIcons {
+object UsbIcons {
     const val MOUSE = "M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6z M12 7v4"
     const val GAMEPAD = "M7 8h10a4 4 0 0 1 4 4v1a4 4 0 0 1-7 2.6h-4A4 4 0 0 1 3 13v-1a4 4 0 0 1 4-4z M7.5 11v3 M6 12.5h3 M15.5 12h.01 M17.5 14h.01"
     const val WEBCAM = "M12 3a6 6 0 1 0 0.01 0z M12 6.5a2.5 2.5 0 1 0 0.01 0z M9 18l-2.5 3h11L15 18"

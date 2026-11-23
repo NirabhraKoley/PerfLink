@@ -222,6 +222,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
                 val s = parseStats(text) ?: return
                 _state.update { it.copy(conn = Conn.Connected, stats = s, history = it.history.push(s)) }
                 checkUsbEvents(s.usb)
+                checkBtEvents(s.bluetooth)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -266,6 +267,24 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         usbAlertJob = viewModelScope.launch {
             delay(4000)
             _state.update { if (it.usbAlert == e) it.copy(usbAlert = null) else it }
+        }
+    }
+
+    // Bluetooth connect/disconnect pop-up (shares the USB banner slot)
+    private var lastBtEvent = -1.0
+
+    private fun checkBtEvents(b: BtState?) {
+        val events = b?.events ?: return
+        val newest = events.maxOfOrNull { it.t } ?: 0.0
+        if (lastBtEvent < 0) { lastBtEvent = newest; return }
+        val e = events.filter { it.t > lastBtEvent }.maxByOrNull { it.t } ?: return
+        lastBtEvent = newest
+        val tagged = e.copy(text = "Bluetooth: ${e.text}")
+        _state.update { it.copy(usbAlert = tagged) }
+        usbAlertJob?.cancel()
+        usbAlertJob = viewModelScope.launch {
+            delay(4000)
+            _state.update { if (it.usbAlert == tagged) it.copy(usbAlert = null) else it }
         }
     }
 

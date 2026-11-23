@@ -31,6 +31,24 @@ import sys
 import threading
 import time
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+TRAY_MODE = "--tray" in sys.argv
+
+# Background (tray) mode runs under pythonw.exe, which has no console: send output to a log file.
+if TRAY_MODE or sys.stdout is None:
+    _log = os.path.join(HERE, "perflink.log")
+    try:
+        if os.path.exists(_log) and os.path.getsize(_log) > 1_000_000:  # keep the log small
+            os.replace(_log, _log + ".old")
+    except OSError:
+        pass
+    sys.stdout = sys.stderr = open(_log, "a", encoding="utf-8", buffering=1)
+    print(f"\n===== PerfLink started {time.strftime('%Y-%m-%d %H:%M:%S')} =====")
+    try:  # show "PerfLink" (not "Python") as the sender of tray notifications
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PerfLink")
+    except Exception:  # noqa: BLE001
+        pass
+
 import psutil
 import websockets
 
@@ -38,6 +56,8 @@ from ai_status import AiStatus
 from launcher import Launcher
 from obs_control import Obs, open_obs
 from processes import Processes
+from bluetooth import BluetoothDevices
+from wifi import WifiStatus
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
 from extras import Media, Volume, Weather, load_config, save_config
@@ -46,7 +66,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.0"
+VERSION = "1.1"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -356,6 +376,8 @@ class Agent:
         self.launcher = Launcher(self.volume)
         self.obs = Obs()
         self.usb = UsbDevices()  # after Sensors: reuses its pythonnet setup
+        self.bluetooth = BluetoothDevices()
+        self.wifi = WifiStatus()
         self.obs_viewers: set = set()  # phones currently showing the OBS page (get previews)
         self._last_preview: str | None = None
 
@@ -419,6 +441,8 @@ class Agent:
         snap["launcher"] = self.launcher.info()
         snap["obs"] = self.obs.snapshot()
         snap["usb"] = self.usb.snapshot()
+        snap["bluetooth"] = self.bluetooth.snapshot()
+        snap["wifi"] = self.wifi.snapshot()
         return snap
 
     async def push(self) -> None:
@@ -446,9 +470,26 @@ class Agent:
                 websockets.broadcast(self.obs_viewers, json.dumps({"type": "obs_preview", "data": prev}))
             await asyncio.sleep(max(0.05, self.interval - (time.monotonic() - t0)))
 
+    tray = None
+    _last_connect_notice = 0.0
+
+    def update_tray(self, connected_ip: str | None = None) -> None:
+        """Refresh the tray status; pop a notice when the first phone connects (at most once a minute)."""
+        if self.tray is None:
+            return
+        n = len(self.clients)
+        ip = self.net.local_ip or "?"
+        phones = "no phone connected" if n == 0 else ("1 phone connected" if n == 1 else f"{n} phones connected")
+        self.tray.set_status(f"PC {ip} · {phones}", f"PerfLink · {phones}")
+        if connected_ip and n == 1 and time.monotonic() - self._last_connect_notice > 60:
+            self._last_connect_notice = time.monotonic()
+            where = "over USB" if connected_ip.startswith("127.") else f"from {connected_ip}"
+            self.tray.notify("PerfLink", f"Phone connected {where}")
+
     async def handler(self, ws) -> None:
         self.clients.add(ws)
         print(f"[+] phone connected: {ws.remote_address[0]}  ({len(self.clients)} client(s))")
+        self.update_tray(connected_ip=ws.remote_address[0])
         try:
             icons = self.procs.all_icons()
             if icons:
@@ -496,6 +537,7 @@ class Agent:
             self.obs_viewers.discard(ws)
             self.obs.preview_wanted = bool(self.obs_viewers)
             print(f"[-] phone disconnected: {ws.remote_address[0]}")
+            self.update_tray()
 
 
 class Discovery(asyncio.DatagramProtocol):
@@ -529,11 +571,24 @@ async def main() -> None:
     ap.add_argument("--city", default=None, help="weather city (saved to config.json; default Kolkata)")
     ap.add_argument("--port", type=int, default=WS_PORT, help="WebSocket port (default 47800)")
     ap.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT, help="UDP discovery port (default 47801)")
+    ap.add_argument("--tray", action="store_true", help="run in the background with a system-tray icon (no console)")
     args = ap.parse_args()
     WS_PORT, DISCOVERY_PORT = args.port, args.discovery_port
 
+    # Only one agent at a time: if PerfLink is already running, quietly leave it be.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if probe.connect_ex(("127.0.0.1", WS_PORT)) == 0:
+            print(f"PerfLink is already running (port {WS_PORT} is in use); exiting.")
+            return
+
     agent = Agent(args.interval, args.ping_host, args.city)
-    agent.tunnel = UsbTunnel(WS_PORT)  # re-creates the USB (adb) tunnel whenever the phone is replugged
+    if args.tray:
+        from tray import Tray
+        agent.tray = Tray(on_quit=lambda: os._exit(0))
+        agent.update_tray()
+    # USB: re-creates the adb tunnel on replug, and installs/updates the phone app from the latest release
+    agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),
+                             notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None)
     loop = asyncio.get_running_loop()
     obs_task = asyncio.create_task(agent.obs.run())  # noqa: F841  (kept alive for the agent's lifetime)
     await loop.create_datagram_endpoint(Discovery, local_addr=("0.0.0.0", DISCOVERY_PORT))

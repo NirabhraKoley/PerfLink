@@ -120,6 +120,42 @@ private fun parseUsb(o: JSONObject) = UsbState(
     error = o.s("error"),
 )
 
+data class BtDevice(
+    val id: String, val name: String, val type: String, val connected: Boolean, val battery: Int?, val le: Boolean,
+)
+data class BtState(
+    val radio: String?, val devices: List<BtDevice>, val connectedCount: Int, val pairedCount: Int,
+    val events: List<UsbEvent>, val error: String?,
+)
+
+data class WifiLink(
+    val iface: String?, val adapter: String?, val connected: Boolean, val ssid: String?, val signal: Int?,
+    val standard: String?, val band: String?, val channel: String?, val security: String?,
+    val rxMbps: Double?, val txMbps: Double?, val ip: String?,
+)
+data class WiredLink(val iface: String, val speedMbps: Double?, val ip: String?)
+data class WifiState(val available: Boolean, val wifi: List<WifiLink>, val wired: List<WiredLink>)
+
+private fun parseWifi(o: JSONObject) = WifiState(
+    available = o.optBoolean("available"),
+    wifi = o.optJSONArray("wifi").mapObj { w ->
+        WifiLink(w.s("interface"), w.s("adapter"), w.optBoolean("connected"), w.s("ssid"), w.d("signal")?.toInt(),
+            w.s("standard"), w.s("band"), w.s("channel"), w.s("security"), w.d("rx_mbps"), w.d("tx_mbps"), w.s("ip"))
+    },
+    wired = o.optJSONArray("wired").mapObj { w -> WiredLink(w.optString("interface"), w.d("speed_mbps"), w.s("ip")) },
+)
+
+private fun parseBt(o: JSONObject) = BtState(
+    radio = o.s("radio"),
+    devices = o.optJSONArray("devices").mapObj { d ->
+        BtDevice(d.optString("id"), d.optString("name"), d.optString("type", "Device"), d.optBoolean("connected"),
+            d.d("battery")?.toInt(), d.optBoolean("le"))
+    },
+    connectedCount = o.optInt("connected_count"), pairedCount = o.optInt("paired_count"),
+    events = o.optJSONArray("events").mapObj { e -> UsbEvent(e.optDouble("t"), e.optString("kind"), e.optString("text")) },
+    error = o.s("error"),
+)
+
 data class ProcList(val apps: List<ProcApp>, val totalProcesses: Int, val totalApps: Int)
 
 data class AiStatus(val apps: List<AiApp>, val sessions: List<AiSession>, val github: GitHub?)
@@ -133,6 +169,8 @@ data class Stats(
     val launcherHints: Map<String, String?> = emptyMap(),
     val obs: ObsState? = null,
     val usb: UsbState? = null,
+    val bluetooth: BtState? = null,
+    val wifi: WifiState? = null,
 )
 
 private fun parseProcs(p: JSONObject) = ProcList(
@@ -211,6 +249,8 @@ fun parseStats(text: String): Stats? = try {
                 ?: emptyMap(),
             obs = o.optJSONObject("obs")?.let { parseObs(it) },
             usb = o.optJSONObject("usb")?.let { parseUsb(it) },
+            bluetooth = o.optJSONObject("bluetooth")?.let { parseBt(it) },
+            wifi = o.optJSONObject("wifi")?.let { parseWifi(it) },
         )
     }
 } catch (e: Exception) {
