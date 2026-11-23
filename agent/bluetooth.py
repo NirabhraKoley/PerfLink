@@ -73,7 +73,7 @@ class BluetoothDevices:
 
     def _scan(self) -> None:
         out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", SCRIPT],
-                             capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW).stdout.strip()
+                             capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW).stdout.strip()
         data = json.loads(out.splitlines()[-1]) if out else {}
         raw = data.get("devices") or []
         if isinstance(raw, dict):

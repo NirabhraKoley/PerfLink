@@ -268,6 +268,7 @@ Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 # ------------------------------------------------------------------ 7. start
 if (-not $NoStart) {
     Step 'Starting PerfLink'
+    $startedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 2
     if (-not $SkipAutostart) { Start-ScheduledTask -TaskName PerfLink }
     else { Start-Process $pyw -ArgumentList "`"$agentPy`" --tray" -WorkingDirectory (Join-Path $App 'agent') }
     # Make sure it really started (it runs without a window, so a crash would otherwise go unnoticed)
@@ -296,6 +297,54 @@ Write-Host "             $apkUrl"
 Write-Host '  Then connect the phone to the same Wi-Fi as this PC, open PerfLink and tap your PC'
 Write-Host "  (or type its IP: $ip)."
 Write-Host '  PerfLink now starts with Windows. Right-click its tray icon for options.'
+
+# ------------------------------------------------------------------ 8. phone plugged in? wait for its app
+# PerfLink installs/updates the phone app over USB by itself; agent\cache\phone_app.json says how far it got.
+function Find-Adb {
+    $c = Get-Command adb -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    $list = @("$env:LOCALAPPDATA\Microsoft\WinGet\Links\adb.exe", "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe") +
+            @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
+    foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
+}
+$adb = if (-not $NoStart) { Find-Adb }
+$phones = if ($adb) { @((& $adb devices 2>$null) | Select-Object -Skip 1 | Where-Object { $_ -match "`t(device|unauthorized)$" }) }
+if ($phones) {
+    $statusFile = Join-Path $App 'agent\cache\phone_app.json'
+    $begin = Get-Date
+    $waiting = $false; $askedAllow = $false
+    Write-Host ''
+    while (((Get-Date) - $begin).TotalMinutes -lt 5) {
+        $st = $null
+        try { $st = Get-Content $statusFile -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
+        if (-not $st -or $st.t -lt $startedAt) {          # PerfLink hasn't looked at the phone yet
+            if (((Get-Date) - $begin).TotalSeconds -gt 60) { break }
+            Start-Sleep 2; continue
+        }
+        $state = $st.state
+        if ($state -eq 'unauthorized' -and -not $askedAllow) {
+            Write-Host "  On the phone, tap 'Allow' on the 'Allow USB debugging?' pop-up." -ForegroundColor Yellow
+            $askedAllow = $true
+        }
+        elseif ($state -in 'downloading', 'installing') {
+            if (-not $waiting) { Write-Host '  Wait, application is installing in your mobile' -ForegroundColor Yellow -NoNewline; $waiting = $true }
+            else { Write-Host '.' -ForegroundColor Yellow -NoNewline }
+        }
+        elseif ($state -in 'done', 'up_to_date', 'failed') {
+            if ($waiting) { Write-Host '' }
+            if ($state -eq 'done') { Write-Host "  Phone app $($st.message) (version $($st.version)) - open PerfLink on the phone." -ForegroundColor Green }
+            elseif ($state -eq 'up_to_date') { Write-Host "  Phone app is already up to date (version $($st.version))." -ForegroundColor Green }
+            else { Write-Host "  Phone app was not installed: $($st.message)" -ForegroundColor Yellow
+                   Write-Host "  Install it on the phone from: $apkUrl" -ForegroundColor Yellow }
+            break
+        }
+        Start-Sleep 2
+    }
+    if ($waiting -and $state -notin 'done', 'up_to_date', 'failed') {
+        Write-Host ''
+        Write-Host '  The phone app is still installing - it will finish by itself; keep the phone plugged in.' -ForegroundColor Yellow
+    }
+}
 }
 catch {
     Write-Host ''
