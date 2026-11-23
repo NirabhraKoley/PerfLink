@@ -1,0 +1,6 @@
+# Keep line endings right for each platform
+* text=auto
+gradlew text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.jar binary

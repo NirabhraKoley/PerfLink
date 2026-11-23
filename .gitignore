@@ -1,0 +1,31 @@
+# --- local toolchains / downloads (fetched by agent/setup.ps1 or Android Studio) ---
+_downloads/
+_toolchain/
+agent/bin/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- per-user agent state (weather city, etc.) ---
+agent/config.json
+agent/*.log
+
+# --- Android / Gradle build output and machine-specific files ---
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+.kotlin/
+
+# --- release artifacts (published as GitHub Releases instead) ---
+*.apk
+*.aab
+
+# --- OS / editor clutter ---
+.DS_Store
+Thumbs.db
+.vscode/
