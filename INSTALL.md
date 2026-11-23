@@ -148,11 +148,19 @@ Phone: long-press the PerfLink icon → **Uninstall**.
 
 ## 8. Troubleshooting
 
+**Quick check:** run this in PowerShell. It only reads information and shows what's installed and running (install, auto-start, tray, log, phone over USB, firewall, Python). Take a screenshot if you need help:
+
+```powershell
+irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/diagnose.ps1 | iex
+```
+
+
 | Problem | Fix |
 |---|---|
 | Phone doesn't find the PC | Same Wi-Fi? (Not mobile data or a guest network.) Firewall rules added? Type the PC's IP manually. |
+| No PerfLink icon by the clock | Click the **^** arrow; new icons start hidden there. If it's not there either, run the quick check above. |
 | Stuck on "Connecting/Reconnecting to the PC…" | Is the PerfLink icon next to the clock? If not, start PerfLink from the desktop. Over USB: is the cable in and USB debugging allowed? The app retries every few seconds by itself. |
-| Phone app didn't install by itself | USB debugging allowed on the phone (and *Install via USB* on Xiaomi)? Unplug and replug the cable. Right-click the tray icon → *Open PerfLink log* to see why. |
+| Phone app didn't install by itself | On a new PC the phone asks *"Allow USB debugging?"*: tap **Allow** (tick *Always allow*). Also check *Install via USB* on Xiaomi. Then unplug and replug the cable. Right-click the tray icon → *Open PerfLink log* to see why. |
 | Bluetooth page shows "Bluetooth is off" | Turn Bluetooth on in Windows Settings. Devices must be paired with the PC to appear. |
 | FPS shows **N/A** | PerfLink needs administrator rights for FPS: install it with the one-command installer (it sets that up), or start it with `start_agent_admin.bat`. FPS follows the window in front, so click into the game. |
 | CPU TEMP shows **N/A** | Needs administrator. Start with `start_agent_admin.bat`. |

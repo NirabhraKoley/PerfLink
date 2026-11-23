@@ -148,6 +148,7 @@ agent/                     PC side (Python)
 android/                   Android app (Kotlin, Jetpack Compose)
 PerfLink.vbs               start PerfLink in the background (used by the shortcuts)
 uninstall.ps1              removes PerfLink (used by Settings > Apps and the tray menu)
+diagnose.ps1               read-only troubleshooting report
 start_agent.bat            start the agent in a console window
 start_agent_admin.bat      start the agent as administrator
 ```

@@ -30,6 +30,26 @@ CACHE = os.path.join(HERE, "cache")
 DEFAULT_REPO = "NirabhraKoley/PerfLink"
 
 
+def find_adb() -> str | None:
+    """adb on PATH, or in the usual install places. Right after the installer adds Platform
+    Tools with winget, Windows hasn't refreshed PATH for already-running programs yet."""
+    import glob
+    found = shutil.which("adb")
+    if found:
+        return found
+    local = os.environ.get("LOCALAPPDATA", "")
+    candidates = [os.path.join(local, "Microsoft", "WinGet", "Links", "adb.exe"),
+                  os.path.join(local, "Android", "Sdk", "platform-tools", "adb.exe")]
+    candidates += glob.glob(os.path.join(local, "Microsoft", "WinGet", "Packages", "Google.PlatformTools*",
+                                         "platform-tools", "adb.exe"))
+    program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+    candidates += glob.glob(os.path.join(program_files, "*", "platform-tools", "adb.exe"))
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
 def _version_tuple(v: str | None) -> tuple:
     return tuple(int(x) for x in re.findall(r"\d+", v or "")) or (0,)
 
@@ -40,12 +60,13 @@ class UsbTunnel:
         self.interval = interval
         self.repo = repo or DEFAULT_REPO
         self.notify = notify or (lambda title, text: None)
-        self.adb = shutil.which("adb")
+        self.adb = find_adb()
         self.phones: list[str] = []
         self._checked: set[str] = set()      # phones already checked for app updates while plugged in
+        self._asked_auth: set[str] = set()   # phones we already told to "Allow USB debugging"
         self._latest: tuple[float, dict] | None = None  # (fetched at, release info)
-        if self.adb:
-            threading.Thread(target=self._loop, daemon=True).start()
+        print(f"[usb] adb: {self.adb or 'not found yet (USB mode and automatic app install wait for it)'}")
+        threading.Thread(target=self._loop, daemon=True).start()
 
     def _run(self, *args: str, timeout: int = 10) -> subprocess.CompletedProcess:
         try:
@@ -58,8 +79,24 @@ class UsbTunnel:
     def _loop(self) -> None:
         want = f"tcp:{PHONE_PORT} tcp:{self.agent_port}"
         while True:
+            if not self.adb:  # installed later (e.g. by the installer)? look again every 30 s
+                time.sleep(30)
+                self.adb = find_adb()
+                if self.adb:
+                    print(f"[usb] adb found: {self.adb}")
+                continue
             out = self._run("devices").stdout
-            serials = [ln.split("\t")[0] for ln in out.splitlines()[1:] if ln.strip().endswith("\tdevice")]
+            lines = [ln.strip() for ln in out.splitlines()[1:] if "\t" in ln]
+            serials = [ln.split("\t")[0] for ln in lines if ln.endswith("\tdevice")]
+            # a phone plugged into a new PC must first approve it ("Allow USB debugging?")
+            waiting = [ln.split("\t")[0] for ln in lines if ln.endswith("\tunauthorized")]
+            for serial in waiting:
+                if serial not in self._asked_auth:
+                    self._asked_auth.add(serial)
+                    print(f"[usb] phone {serial} is waiting for 'Allow USB debugging' on its screen")
+                    self.notify("PerfLink", "Phone connected: tap 'Allow' on the phone's "
+                                            "'Allow USB debugging?' pop-up (tick 'Always allow').")
+            self._asked_auth &= set(waiting)
             for s in serials:
                 if want not in self._run("-s", s, "reverse", "--list").stdout:
                     self._run("-s", s, "reverse", f"tcp:{PHONE_PORT}", f"tcp:{self.agent_port}")
