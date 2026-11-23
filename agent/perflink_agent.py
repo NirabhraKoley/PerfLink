@@ -584,7 +584,15 @@ async def main() -> None:
     agent = Agent(args.interval, args.ping_host, args.city)
     if args.tray:
         from tray import Tray
-        agent.tray = Tray(on_quit=lambda: os._exit(0))
+        def _quit() -> None:
+            try:  # also close the FPS helper, or it keeps running after PerfLink exits
+                if agent.frames.proc:
+                    agent.frames.proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+            os._exit(0)
+
+        agent.tray = Tray(on_quit=_quit)
         agent.update_tray()
     # USB: re-creates the adb tunnel on replug, and installs/updates the phone app from the latest release
     agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),

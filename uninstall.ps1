@@ -35,6 +35,7 @@ if (-not $Elevated) {
 if (Get-ScheduledTask -TaskName PerfLink) { Stop-ScheduledTask -TaskName PerfLink }
 Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'python.exe', 'pythonw.exe' -and $_.CommandLine -like '*perflink_agent.py*' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Get-Process PresentMon | Where-Object { $_.Path -like "$App\*" } | Stop-Process -Force   # FPS helper
 Start-Sleep -Milliseconds 800
 # 2. auto-start, firewall
 Unregister-ScheduledTask -TaskName PerfLink -Confirm:$false
@@ -47,7 +48,12 @@ Remove-Item $Key -Recurse -Force
 $default = Join-Path $env:LOCALAPPDATA 'PerfLink'
 $isInstall = (Test-Path (Join-Path $App '.perflink-install')) -or
              ((Resolve-Path $App -ErrorAction SilentlyContinue).Path -eq $default -and (Test-Path (Join-Path $App 'agent\perflink_agent.py')))
-if ($App -and $isInstall -and -not (Test-Path (Join-Path $App '.git'))) { Remove-Item $App -Recurse -Force }
+if ($App -and $isInstall -and -not (Test-Path (Join-Path $App '.git'))) {
+    for ($i = 0; $i -lt 10 -and (Test-Path $App); $i++) {   # files can stay locked for a moment
+        Remove-Item $App -Recurse -Force
+        if (Test-Path $App) { Start-Sleep 1 }
+    }
+}
 
 if (-not $Quiet) {
     Add-Type -AssemblyName System.Windows.Forms
