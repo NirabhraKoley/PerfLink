@@ -46,6 +46,9 @@ if ($ownTask) { Stop-ScheduledTask -TaskName PerfLink }
 Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'python*.exe' -and (Mine $_.CommandLine) } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Get-Process PresentMon | Where-Object { Mine $_.Path } | Stop-Process -Force
+Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'powershell.exe' -and $_.ProcessId -ne $PID -and
+    $_.CommandLine -like '*.ps1*' -and $_.CommandLine -notlike '*uninstall.ps1*' -and (Mine $_.CommandLine) } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Milliseconds 800
 # 2. start with Windows; firewall rules (shared) only when removing the registered install
 if ($ownTask) { Unregister-ScheduledTask -TaskName PerfLink -Confirm:$false }

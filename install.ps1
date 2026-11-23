@@ -51,6 +51,10 @@ function Stop-Agent {
     # PerfLink's FPS helper keeps running (and locks agent\bin) if only the agent is stopped
     Get-Process PresentMon -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$App\*" } |
         Stop-Process -Force -ErrorAction SilentlyContinue
+    # ...and so do its Bluetooth / Wi-Fi checks (powershell.exe running agent\*.ps1 inside the folder)
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'powershell.exe' -and $_.ProcessId -ne $PID -and $_.CommandLine -like "*$App\agent\*.ps1*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Milliseconds 1500
 }
 
