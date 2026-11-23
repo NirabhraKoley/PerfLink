@@ -32,7 +32,7 @@ if (-not $Elevated) {
 
 # ------------------------------------------------------------------ elevated copy does the work
 # 1. stop PerfLink
-schtasks.exe /end /tn PerfLink 2>$null | Out-Null
+if (Get-ScheduledTask -TaskName PerfLink) { Stop-ScheduledTask -TaskName PerfLink }
 Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'python.exe', 'pythonw.exe' -and $_.CommandLine -like '*perflink_agent.py*' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Milliseconds 800

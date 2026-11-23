@@ -41,7 +41,10 @@ function Assert-SafeToReplace($dir) {
     if (-not (Test-Path (Join-Path $dir 'agent\perflink_agent.py'))) { throw "Refusing to delete '$dir': it doesn't look like a PerfLink install." }
 }
 function Stop-Agent {
-    schtasks.exe /end /tn PerfLink 2>$null | Out-Null
+    # (not schtasks.exe: under ErrorAction Stop its "task not found" message aborted the install)
+    if (Get-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue
+    }
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -in 'python.exe', 'pythonw.exe' -and $_.CommandLine -like '*perflink_agent.py*' } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -230,30 +233,12 @@ foreach ($k in 'NoModify', 'NoRepair') { Set-ItemProperty $key -Name $k -Value 1
 Set-ItemProperty $key -Name EstimatedSize -Value $sizeKb -Type DWord
 Done "Listed as 'PerfLink $ver' - uninstall it from Settings > Apps or Control Panel like any app"
 
-# ------------------------------------------------------------------ Windows "Apps / Programs and Features" entry
-Step 'Registering PerfLink with Windows (Apps & features / Programs and Features)'
-$ver = (Select-String -Path $agentPy -Pattern '^VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
-$key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\PerfLink'
-New-Item $key -Force | Out-Null
-$sizeKb = [int]((Get-ChildItem $App -Recurse -File | Measure-Object Length -Sum).Sum / 1KB)
-$un = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $App 'uninstall.ps1')`""
-$vals = @{
-    DisplayName = 'PerfLink'; DisplayVersion = $ver; Publisher = 'Nirabhra Koley'
-    DisplayIcon = $(if (Test-Path (Join-Path $App 'agent\perflink.ico')) { Join-Path $App 'agent\perflink.ico' } else { $pyw })
-    InstallLocation = $App; URLInfoAbout = "https://github.com/$Repo"; HelpLink = "https://github.com/$Repo/blob/main/INSTALL.md"
-    UninstallString = $un; QuietUninstallString = "$un -Quiet"
-    InstallDate = (Get-Date -Format 'yyyyMMdd'); Comments = 'PC stats and controls on your Android phone'
-}
-foreach ($k in $vals.Keys) { Set-ItemProperty $key -Name $k -Value $vals[$k] }
-foreach ($k in 'NoModify', 'NoRepair') { Set-ItemProperty $key -Name $k -Value 1 -Type DWord }
-Set-ItemProperty $key -Name EstimatedSize -Value $sizeKb -Type DWord
-Done "Listed as 'PerfLink $ver' - uninstall it from Settings > Apps or Control Panel like any app"
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
 # ------------------------------------------------------------------ 7. start
 if (-not $NoStart) {
     Step 'Starting PerfLink'
-    if (-not $SkipAutostart) { schtasks.exe /run /tn PerfLink | Out-Null }
+    if (-not $SkipAutostart) { Start-ScheduledTask -TaskName PerfLink }
     else { Start-Process $pyw -ArgumentList "`"$agentPy`" --tray" -WorkingDirectory (Join-Path $App 'agent') }
     Done 'Running in the background - look for the PerfLink icon next to the clock'
 }
