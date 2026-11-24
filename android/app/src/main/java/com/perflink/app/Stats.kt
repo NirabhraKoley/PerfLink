@@ -191,16 +191,23 @@ private fun parseBt(o: JSONObject) = BtState(
     error = o.s("error"),
 )
 
-data class WaNote(val id: String, val title: String, val text: String, val t: Double?)
+data class WaNote(val id: String, val title: String, val text: String, val t: Double?, val kind: String = "message")
+data class SocialApp(val key: String, val name: String, val messages: Int, val calls: Int, val notes: List<WaNote>)
+
+private fun parseNote(n: JSONObject) =
+    WaNote(n.optString("id"), n.optString("title"), n.optString("text"), n.d("t"), n.optString("kind", "message"))
+
+private fun parseSocial(o: JSONObject) = o.optJSONArray("apps").mapObj { a ->
+    SocialApp(a.optString("key"), a.optString("name"), a.optInt("messages"), a.optInt("calls"),
+        a.optJSONArray("notifications").mapObj { parseNote(it) })
+}
 data class WhatsApp(val installed: Boolean, val running: Boolean, val notes: List<WaNote>,
                     val messages: Int, val calls: Int)
 
 private fun parseWhatsApp(o: JSONObject) = WhatsApp(
     installed = o.optBoolean("installed"),
     running = o.optBoolean("running"),
-    notes = o.optJSONArray("notifications").mapObj { n ->
-        WaNote(n.optString("id"), n.optString("title"), n.optString("text"), n.d("t"))
-    },
+    notes = o.optJSONArray("notifications").mapObj { parseNote(it) },
     messages = o.optInt("messages"),
     calls = o.optInt("calls"),
 )
@@ -222,6 +229,7 @@ data class Stats(
     val wifi: WifiState? = null,
     val whatsapp: WhatsApp? = null,
     val weatherDetail: WeatherDetail? = null,
+    val social: List<SocialApp>? = null,
 )
 
 private fun parseProcs(p: JSONObject) = ProcList(
@@ -292,6 +300,7 @@ fun parseStats(text: String): Stats? = try {
             volume = o.optJSONObject("volume")?.let { v -> Volume(v.d("level"), v.optBoolean("muted")) },
             weather = o.optJSONObject("weather")?.let { parseWeather(it) },
             weatherDetail = o.optJSONObject("weather_detail")?.let { parseWeatherDetail(it) },
+            social = o.optJSONObject("social")?.let { parseSocial(it) },
             ai = o.optJSONObject("ai")?.let { parseAi(it) },
             processes = o.optJSONObject("processes")?.let { parseProcs(it) },
             launcherHints = o.optJSONObject("launcher")?.let { l -> l.keys().asSequence().associateWith { l.s(it) } }

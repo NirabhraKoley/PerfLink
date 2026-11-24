@@ -69,6 +69,7 @@ from bluetooth import BluetoothDevices
 from wifi import WifiStatus
 from whatsapp import WhatsAppNotifications
 import remote_input
+from social import SocialApps
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
 from extras import Media, Volume, load_config, save_config
@@ -78,7 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.6"
+VERSION = "1.7"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -393,6 +394,7 @@ class Agent:
         self.bluetooth = BluetoothDevices()
         self.wifi = WifiStatus()
         self.whatsapp = WhatsAppNotifications()
+        self.social = SocialApps(self.whatsapp)
         self.obs_viewers: set = set()  # phones currently showing the OBS page (get previews)
         self._last_preview: str | None = None
 
@@ -465,6 +467,7 @@ class Agent:
         snap["bluetooth"] = self.bluetooth.snapshot()
         snap["wifi"] = self.wifi.snapshot()
         snap["whatsapp"] = self.whatsapp.snapshot()
+        snap["social"] = self.social.snapshot()
         return snap
 
     async def push(self) -> None:

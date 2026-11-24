@@ -29,7 +29,8 @@ Swipe left/right; the pages loop. A **Home** button sits top-right on every othe
 | `[7]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
 | `[8]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
 | `[9]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
-| `[10]` | **Weather** | One swipe left of Home, or tap the weather on Home. Detailed weather for where the **PC** is: now (feels like, humidity, wind and gusts, UV, air quality, pressure, visibility, sunrise and sunset), the next 24 hours and 7 days. |
+| `[10]` | **Weather** | Two swipes left of Home, or tap the weather on Home. Detailed weather for where the **PC** is: now (feels like, humidity, wind and gusts, UV, air quality, pressure, visibility, sunrise and sunset), the next 24 hours and 7 days. |
+| `[11]` | **Social** | One swipe left of Home. Lists the social and chat apps open on the PC (WhatsApp, Telegram, Discord, Instagram, Messenger, Facebook, Signal, Slack, Teams, Skype, Viber, X, LinkedIn, WeChat, Zoom), each with its unread messages and calls in detail: who, what and when. It mirrors the PC's notification center: read a message or see a call on the PC and it clears here too. Apps that aren't open are hidden. |
 
 A pop-up appears on every page when a USB device is plugged in or removed, or a Bluetooth device connects or disconnects.
 

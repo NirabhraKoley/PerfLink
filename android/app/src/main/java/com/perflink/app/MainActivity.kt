@@ -201,10 +201,10 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
 
 // =============================================================================== Dashboard
 // Page order: gaming stats first, then system info, then controls.
-// Pages loop, so Weather (last) is one swipe left of Home, then Remote and Launcher.
+// Pages loop, so Social (last) is one swipe left of Home, then Weather, Remote and Launcher.
 //   0 Home · 1 Performance · 2 Overlay · 3 Processes · 4 USB · 5 Bluetooth · 6 Sessions · 7 OBS · 8 Launcher
-//   · 9 Remote (mouse and keyboard) · 10 Weather (one swipe left of Home)
-private const val PAGES = 11
+//   · 9 Remote (mouse and keyboard) · 10 Weather · 11 Social (one swipe left of Home)
+private const val PAGES = 12
 private const val WEATHER_PAGE = 10
 private const val OBS_PAGE = 7
 
@@ -240,7 +240,7 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 }
                 page == 0 -> HomePage(state, vm::media, vm::setVolume, vm::toggleMute, vm::setCity, vm::disconnect,
                     onWeatherAuto = vm::weatherAuto,
-                    onOpenWeather = { pageScope.launch { pager.animateScrollToPage(pager.currentPage - 1) } })
+                    onOpenWeather = { pageScope.launch { pager.animateScrollToPage(pager.currentPage - (PAGES - WEATHER_PAGE)) } })
                 page == 1 -> StatsPage(state, compact = false, onDisconnect = vm::disconnect)
                 page == 2 -> StatsPage(state, compact = true, onDisconnect = vm::disconnect)
                 page == 3 -> ProcessesPage(state)
@@ -250,7 +250,8 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 page == OBS_PAGE -> ObsPage(state, vm)
                 page == 8 -> LauncherPage(state, vm::action)
                 page == 9 -> RemotePage(state, vm)
-                else -> WeatherPage(state)
+                page == WEATHER_PAGE -> WeatherPage(state)
+                else -> SocialPage(state)
             }
         }
         // Only ask the PC for OBS preview frames while the OBS page is showing
