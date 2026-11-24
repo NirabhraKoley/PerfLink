@@ -224,6 +224,7 @@ data class Stats(
     val whatsapp: WhatsApp? = null,
     val weatherDetail: WeatherDetail? = null,
     val monitors: List<Monitor>? = null,
+    val mirrorError: String? = null,
 )
 
 data class Monitor(val index: Int, val name: String, val w: Int, val h: Int, val primary: Boolean, val off: Boolean = false)
@@ -300,6 +301,7 @@ fun parseStats(text: String): Stats? = try {
                 Monitor(m.optInt("index"), m.optString("name"), m.optInt("w"), m.optInt("h"), m.optBoolean("primary"),
                     m.optBoolean("off"))
             }.takeIf { o.has("mirror") },
+            mirrorError = o.optJSONObject("mirror")?.s("error"),
             ai = o.optJSONObject("ai")?.let { parseAi(it) },
             processes = o.optJSONObject("processes")?.let { parseProcs(it) },
             launcherHints = o.optJSONObject("launcher")?.let { l -> l.keys().asSequence().associateWith { l.s(it) } }

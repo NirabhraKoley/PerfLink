@@ -97,6 +97,11 @@ fun MirrorPage(state: UiState, vm: PerfViewModel) {
                     Spacer(Modifier.height(12.dp))
                     Text("Waiting for the PC screen…", color = Palette.dim, fontSize = 13.sp)
                 }
+                // e.g. the screen capture keeps crashing on this PC (PerfLink itself keeps running)
+                state.stats?.mirrorError?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(it, color = Palette.warn, fontSize = 12.sp, modifier = Modifier.width(420.dp))
+                }
             }
         }
         // top-right, left of the Home button

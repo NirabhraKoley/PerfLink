@@ -1,27 +1,37 @@
 """
-Screen mirroring for PerfLink's "Mirror" page: the PC's screen (any monitor) and its sound, live on
-the phone, over Wi-Fi or USB (the same WebSocket as everything else).
+Screen mirroring for PerfLink's "Mirror" page: the PC's screen and its sound, live on the phone, over
+Wi-Fi or USB (the same WebSocket as everything else).
 
-  Video: Windows Desktop Duplication (dxcam), only changed frames, about 30 per second, scaled to
-         the phone and sent as JPEG, with the mouse pointer drawn in. Falls back to GDI capture (mss)
-         when Duplication stops, and follows monitors being switched off / on. Flow control: at most two
-         frames are on their way to a phone, so a slow link drops frames instead of lagging behind.
-  Sound: WASAPI loopback of the PC's default output (exactly what the PC plays), 16-bit PCM.
+The capture itself runs in two small helper processes ("python mirror.py --helper video|audio"),
+started only while a phone has the Mirror page open. Screen and sound capture use native Windows
+libraries (Desktop Duplication, WASAPI loopback); if one of them crashes on some PC, only its helper
+stops: PerfLink keeps running, logs the crash, restarts the helper, and after repeated crashes turns
+that part off and says so on the phone.
 
-The screen keeps streaming when the monitor itself is switched off with its power button, as long
-as Windows still sees the monitor (most HDMI monitors; some DisplayPort monitors disappear from
-Windows when switched off). Nothing is captured unless a phone has the Mirror page open.
+  Video helper: Desktop Duplication (dxcam), only changed frames, about 30 per second, scaled to the
+         phone and sent as JPEG with the mouse pointer drawn in. Falls back to GDI capture (mss) when
+         Duplication stops, and follows monitors being switched off / on. Flow control: it only
+         encodes a frame when a phone is ready for one (at most two on their way).
+  Audio helper: WASAPI loopback of the PC's default output (exactly what the PC plays), 16-bit PCM.
 
 Binary messages to the phone:
   0x01 + JPEG bytes                                  a video frame
   0x02 + rate (uint32 LE) + channels (uint8) + PCM   a chunk of sound (16-bit little-endian)
+
+Helper -> PerfLink (stdout): kind byte + payload length (uint32 LE) + payload
+  M  monitors (JSON)     V  monitor index byte + JPEG     A  a phone-ready sound message     E  error text
+PerfLink -> video helper (stdin, JSON lines): {"monitors": [0], "width": 1280}  {"ready": 1}  {"refresh": 1}
 """
 from __future__ import annotations
 
 import asyncio
 import ctypes
 import io
+import json
+import os
 import struct
+import subprocess
+import sys
 import threading
 import time
 from ctypes import wintypes
@@ -29,8 +39,11 @@ from ctypes import wintypes
 FPS = 30
 JPEG_QUALITY = 62
 MAX_IN_FLIGHT = 2
+HERE = os.path.dirname(os.path.abspath(__file__))
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
+# ============================================================================ shared helpers
 class _Cursor(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD), ("hCursor", wintypes.HANDLE),
                 ("pt", wintypes.POINT)]
@@ -43,26 +56,31 @@ def _cursor_pos() -> tuple[int, int] | None:
     return None
 
 
-def _monitor_rects() -> list[dict]:
-    """Every monitor's desktop rectangle, from Windows (to place the mouse pointer)."""
-    out = []
-    proto = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(wintypes.RECT), ctypes.c_double)
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD)]
 
-    class MONITORINFO(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
-                    ("dwFlags", wintypes.DWORD)]
+
+_MonitorEnumProc = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT),
+                                      wintypes.LPARAM)
+
+
+def _monitor_rects() -> list[dict]:
+    """Every monitor's desktop rectangle, from Windows."""
+    out = []
 
     def each(hmon, _hdc, _rect, _data):
-        mi = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
-        ctypes.windll.user32.GetMonitorInfoW(ctypes.c_void_p(hmon), ctypes.byref(mi))
+        mi = _MONITORINFO(cbSize=ctypes.sizeof(_MONITORINFO))
+        ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(mi))
         r = mi.rcMonitor
         out.append({"x": r.left, "y": r.top, "w": r.right - r.left, "h": r.bottom - r.top, "primary": bool(mi.dwFlags & 1)})
         return 1
 
-    ctypes.windll.user32.EnumDisplayMonitors(None, None, proto(each), 0)
+    ctypes.windll.user32.EnumDisplayMonitors(None, None, _MonitorEnumProc(each), 0)
     return out
 
 
+# ============================================================================ in PerfLink
 class Viewer:
     def __init__(self, ws) -> None:
         self.ws = ws
@@ -72,22 +90,121 @@ class Viewer:
         self.in_flight = 0
 
 
+class _Helper:
+    """One capture helper process: started when wanted, restarted if it crashes, given up on (for a
+    few minutes) if it keeps crashing, so a native crash can never take PerfLink down."""
+
+    def __init__(self, kind: str, on_message) -> None:
+        self.kind = kind
+        self.on_message = on_message
+        self.proc: subprocess.Popen | None = None
+        self.wanted = False
+        self.crashes: list[float] = []
+        self.disabled_until = 0.0
+        self.error: str | None = None
+        self.on_start = lambda: None
+        self._lock = threading.Lock()
+
+    def want(self, on: bool) -> None:
+        self.wanted = on
+        with self._lock:
+            running = self.proc is not None and self.proc.poll() is None
+        if on and not running:
+            self._start()
+        elif not on and running:
+            self._stop()
+
+    def send(self, obj: dict) -> None:
+        p = self.proc
+        if p is None or p.poll() is not None:
+            return
+        try:
+            p.stdin.write((json.dumps(obj) + "\n").encode())
+            p.stdin.flush()
+        except OSError:
+            pass
+
+    def _python(self) -> str:
+        exe = sys.executable
+        console = os.path.join(os.path.dirname(exe), "python.exe")  # not pythonw: its pipes are more reliable
+        return console if exe.lower().endswith("pythonw.exe") and os.path.exists(console) else exe
+
+    def _start(self) -> None:
+        with self._lock:
+            if time.time() < self.disabled_until or (self.proc is not None and self.proc.poll() is None):
+                return
+            try:
+                self.proc = subprocess.Popen([self._python(), os.path.join(HERE, "mirror.py"), "--helper", self.kind],
+                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                             cwd=os.path.expanduser("~"), creationflags=NO_WINDOW)
+            except OSError as e:
+                self.error = f"Mirror {self.kind}: couldn't start ({e})"
+                return
+            proc = self.proc
+        threading.Thread(target=self._read, args=(proc,), daemon=True).start()
+        threading.Thread(target=self._read_err, args=(proc,), daemon=True).start()
+        self.on_start()
+
+    def _stop(self) -> None:
+        with self._lock:
+            p, self.proc = self.proc, None
+        if p is not None:
+            try:
+                p.kill()
+            except OSError:
+                pass
+
+    def _read_err(self, proc) -> None:
+        for line in proc.stderr:
+            text = line.decode("utf-8", "replace").rstrip()
+            if text:
+                print(f"[mirror-{self.kind}] {text}")
+
+    def _read(self, proc) -> None:
+        out = proc.stdout
+        try:
+            while True:
+                head = out.read(5)
+                if len(head) < 5:
+                    break
+                n = struct.unpack("<I", head[1:5])[0]
+                payload = out.read(n)
+                if len(payload) < n:
+                    break
+                self.on_message(head[:1], payload)
+        except Exception:  # noqa: BLE001
+            pass
+        code = proc.wait()
+        with self._lock:
+            ours = self.proc is proc
+            if ours:
+                self.proc = None
+        if not ours or not self.wanted:
+            return  # stopped on purpose
+        # it died on its own: a crash in the capture library on this PC
+        now = time.time()
+        self.crashes = [t for t in self.crashes if now - t < 120] + [now]
+        print(f"[mirror] the {self.kind} helper stopped unexpectedly (exit code 0x{code & 0xFFFFFFFF:08X}); "
+              f"{'restarting' if len(self.crashes) < 3 else 'turning it off for 5 minutes'}")
+        if len(self.crashes) >= 3:
+            self.disabled_until = now + 300
+            self.error = (f"Mirror {self.kind} keeps crashing on this PC (0x{code & 0xFFFFFFFF:08X}); "
+                          "it's off for 5 minutes. The rest of PerfLink works normally.")
+            return
+        time.sleep(1)
+        if self.wanted:
+            self._start()
+
+
 class Mirror:
     def __init__(self) -> None:
         self.loop: asyncio.AbstractEventLoop | None = None
         self.viewers: dict = {}  # ws -> Viewer
         self.monitors: list[dict] = []
-        self._seen: dict[str, dict] = {}   # every monitor seen since PerfLink started, by Windows name
-        self.audio_format: dict | None = None
         self.error: str | None = None
-        self._wake = threading.Event()
-        self._lock = threading.Lock()
-        try:
-            self._list_monitors()
-        except Exception as e:  # noqa: BLE001
-            self.error = f"Mirror: {e}"
-        threading.Thread(target=self._video_loop, daemon=True).start()
-        threading.Thread(target=self._audio_loop, daemon=True).start()
+        self.video = _Helper("video", self._on_message)
+        self.audio = _Helper("audio", self._on_message)
+        self.video.on_start = self._configure_video
 
     # ------------------------------------------------------------------ phone commands
     def command(self, ws, msg: dict) -> None:
@@ -95,43 +212,131 @@ class Mirror:
             v = self.viewers.get(ws)
             if v:
                 v.in_flight = max(0, v.in_flight - 1)
+                self.video.send({"ready": 1})
             return
         if not msg.get("on"):
             self.viewers.pop(ws, None)
-            return
-        v = self.viewers.get(ws) or Viewer(ws)
-        v.monitor = int(msg.get("monitor", v.monitor) or 0)
-        v.audio = bool(msg.get("audio", v.audio))
-        v.width = max(320, min(int(msg.get("width", v.width) or 1280), 1920))
-        v.in_flight = 0
-        with self._lock:
+        else:
+            v = self.viewers.get(ws) or Viewer(ws)
+            v.monitor = int(msg.get("monitor", v.monitor) or 0)
+            v.audio = bool(msg.get("audio", v.audio))
+            v.width = max(320, min(int(msg.get("width", v.width) or 1280), 1920))
+            v.in_flight = 0
             self.viewers[ws] = v
-        self._wake.set()
+        self._sync()
+
+    def drop(self, ws) -> None:
+        if self.viewers.pop(ws, None) is not None:
+            self._sync()
+
+    def _sync(self) -> None:
+        """Run the helpers only while some phone needs them."""
+        viewers = list(self.viewers.values())
+        self.video.want(bool(viewers))
+        self.audio.want(any(v.audio for v in viewers))
+        self._configure_video()
+
+    def _configure_video(self) -> None:
+        viewers = list(self.viewers.values())
+        if not viewers:
+            return
+        self.video.send({"monitors": sorted({v.monitor for v in viewers}), "width": max(v.width for v in viewers),
+                         "ready": sum(max(0, MAX_IN_FLIGHT - v.in_flight) for v in viewers), "refresh": 1})
 
     def to_desktop(self, x: float, y: float) -> tuple[int, int] | None:
         """A spot on the phone's picture (0..1 across and down) -> desktop pixels on the monitor shown
         (the main monitor)."""
-        mon = (self.monitors or [None])[0]
+        mon = next((m for m in self.monitors if not m.get("off")), None)
         r = (mon or {}).get("rect") or next((r for r in _monitor_rects() if r["primary"]), None)
         if not r:
             return None
         x, y = min(max(float(x), 0.0), 0.9999), min(max(float(y), 0.0), 0.9999)
         return r["x"] + int(x * r["w"]), r["y"] + int(y * r["h"])
 
-    def drop(self, ws) -> None:
-        self.viewers.pop(ws, None)
-
     def snapshot(self) -> dict:
-        # monitors that were there but aren't now (switched off: Windows dropped them) are listed too,
-        # so the phone can say so instead of the monitor silently vanishing from the list
-        on = {m["id"] for m in self.monitors if m.get("id")}
-        off = [{"index": -1, "off": True, "name": f"{v['label']} · switched off", "id": k, "w": v["w"], "h": v["h"],
-                "primary": False} for k, v in sorted(self._seen.items(), key=lambda kv: kv[1]["num"]) if k not in on]
-        return {"monitors": self.monitors + off, "error": self.error, "streaming": len(self.viewers)}
+        errors = [e for e in (self.error, self.video.error, self.audio.error) if e]
+        return {"monitors": self.monitors, "error": "; ".join(errors) or None, "streaming": len(self.viewers)}
 
-    # ------------------------------------------------------------------ video
-    def _list_monitors(self, refresh: bool = False) -> None:
-        import dxcam  # noqa: PLC0415  (loaded on first use: needs COM, see _video_loop)
+    # ------------------------------------------------------------------ from the helpers
+    def _on_message(self, kind: bytes, payload: bytes) -> None:
+        if kind == b"V":
+            idx, jpeg = payload[0], payload[1:]
+            for v in list(self.viewers.values()):
+                if v.in_flight < MAX_IN_FLIGHT and (v.monitor == idx or not any(m["index"] == v.monitor for m in self.monitors)):
+                    v.in_flight += 1
+                    self._send(v.ws, b"\x01" + jpeg)
+        elif kind == b"A":
+            for v in list(self.viewers.values()):
+                if v.audio:
+                    self._send(v.ws, payload, audio=True)
+        elif kind == b"M":
+            try:
+                self.monitors = json.loads(payload)
+            except ValueError:
+                pass
+        elif kind == b"E":
+            self.error = payload.decode("utf-8", "replace") or None
+
+    # ------------------------------------------------------------------ sending (on the agent's event loop)
+    def _send(self, ws, data: bytes, audio: bool = False) -> None:
+        if self.loop is None:
+            return
+        self.loop.call_soon_threadsafe(asyncio.ensure_future, self._send_async(ws, data, audio))
+
+    async def _send_async(self, ws, data: bytes, audio: bool) -> None:
+        try:
+            # don't pile up sound behind a slow link: better a short gap than growing delay
+            if audio and ws.transport is not None and ws.transport.get_write_buffer_size() > 256_000:
+                return
+            await ws.send(data)
+        except Exception:  # noqa: BLE001  (phone went away)
+            self.viewers.pop(ws, None)
+
+
+# ============================================================================ helper processes
+_out_lock = threading.Lock()
+
+
+def _emit(kind: bytes, payload: bytes) -> None:
+    with _out_lock:
+        sys.stdout.buffer.write(kind + struct.pack("<I", len(payload)) + payload)
+        sys.stdout.buffer.flush()
+
+
+def _watch_parent(on_line=None) -> None:
+    """Read commands from PerfLink; when PerfLink goes away (stdin closes), quit."""
+    def run():
+        for line in sys.stdin.buffer:
+            if on_line:
+                try:
+                    on_line(json.loads(line))
+                except ValueError:
+                    pass
+        os._exit(0)
+    threading.Thread(target=run, daemon=True).start()
+
+
+class _VideoHelper:
+    def __init__(self) -> None:
+        self.want = {"monitors": [0], "width": 1280}
+        self.credits = 0
+        self.refresh = False
+        self.monitors: list[dict] = []
+        self._seen: dict[str, dict] = {}  # every monitor seen, by Windows name (\\.\DISPLAY1…)
+        self._last_pointer = None
+        self._wake = threading.Event()
+
+    def command(self, msg: dict) -> None:
+        if "monitors" in msg:
+            self.want = {"monitors": [int(m) for m in msg["monitors"]] or [0], "width": int(msg.get("width", 1280))}
+        if msg.get("ready"):
+            self.credits = min(MAX_IN_FLIGHT * 4, self.credits + int(msg["ready"]))
+        if msg.get("refresh"):
+            self.refresh = True
+        self._wake.set()
+
+    def list_monitors(self, refresh: bool = False) -> None:
+        import dxcam  # noqa: PLC0415
         if refresh:  # monitors changed (one switched off / on): make dxcam look again
             factory = dxcam.__dict__.get("__factory")
             if factory is not None:
@@ -152,8 +357,6 @@ class Mirror:
             except (IndexError, ValueError):
                 continue
             mons.append({"index": len(mons), "device": dev, "output": out, "w": w, "h": h, "primary": primary})
-        # Windows' own name for each monitor (\\.\DISPLAY1…) stays the same when others come and go,
-        # so numbers and names stay put; the model name when Windows knows it (not "Generic PnP Monitor")
         factory = dxcam.__dict__.get("__factory")
         for m in mons:
             try:
@@ -172,33 +375,33 @@ class Mirror:
         for i, m in enumerate(mons):
             m["index"] = i
             label = f"Monitor {self._seen[m['id']]['num']}" + (f" · {m['model']}" if m["model"] else "")
-            self._seen[m["id"]].update(label=label, w=m["w"], h=m["h"])
             m["name"] = label + (" (main)" if m["primary"] else "") + f" · {m['w']}×{m['h']}"
-            # where it sits on the desktop (for the pointer, and for the GDI fallback)
             r = next((k for k, r in enumerate(rects) if k not in used and r["w"] == m["w"] and r["h"] == m["h"]
                       and r["primary"] == m["primary"]), None)
             if r is not None:
                 used.add(r)
                 m["rect"] = rects[r]
         self.monitors = mons
+        _emit(b"M", json.dumps(mons).encode())
 
-    def _video_loop(self) -> None:
+    def run(self) -> None:
         """Desktop Duplication (fast) with two safety nets, so the phone never freezes:
         - the monitor layout is checked every frame: when a monitor is switched off (many DisplayPort
           monitors then vanish from Windows) or on, everything is rebuilt for the monitors left;
         - if Desktop Duplication stops delivering while the picture is still changing (a monitor
           that's off but still listed), it switches to GDI capture (mss) until Duplication works again."""
+        import numpy as np  # noqa: PLC0415
         try:
             import comtypes  # noqa: PLC0415
             comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
         except Exception:  # noqa: BLE001
             pass
-        import numpy as np  # noqa: PLC0415
+        _watch_parent(self.command)
         cams: dict[int, object] = {}
-        last: dict[int, object] = {}        # last frame per monitor (sent again to phones that just joined)
+        last: dict[int, object] = {}
         last_sent: dict[int, float] = {}
-        last_fresh: dict[int, float] = {}   # when Desktop Duplication last gave a new frame
-        gdi: dict[int, bool] = {}           # monitors currently captured with GDI instead
+        last_fresh: dict[int, float] = {}
+        gdi: dict[int, bool] = {}
         gdi_probe: dict[int, float] = {}
         layout = None
         grabber = None
@@ -226,23 +429,17 @@ class Mirror:
             return a is not None and b is not None and a.shape == b.shape and np.array_equal(a[::16, ::16], b[::16, ::16])
 
         while True:
-            if not self.viewers:
-                release_all()
-                self._wake.wait(); self._wake.clear()
-                continue
             start = time.time()
             try:
                 rects = _monitor_rects()
                 now_layout = tuple((r["x"], r["y"], r["w"], r["h"], r["primary"]) for r in rects)
                 if now_layout != layout or not self.monitors:
                     if layout is not None:
-                        print(f"[mirror] monitors changed: {len(rects)} now")
+                        print(f"monitors changed: {len(rects)} now", file=sys.stderr, flush=True)
                     release_all()
-                    self._list_monitors(refresh=layout is not None)
+                    self.list_monitors(refresh=layout is not None)
                     layout = now_layout
-                wanted = {v.monitor for v in list(self.viewers.values())}
-                for idx in wanted:
-                    # a monitor that's gone (switched off): show the main one instead
+                for idx in list(self.want["monitors"]):
                     mon = next((m for m in self.monitors if m["index"] == idx), None) or (self.monitors or [None])[0]
                     if mon is None:
                         continue
@@ -260,22 +457,21 @@ class Mirror:
                         if fresh:
                             last_fresh[key] = now
                         elif now - last_fresh.get(key, now) > 1.5 and now - gdi_probe.get(key, 0) > 1.5:
-                            # Duplication quiet for 1.5 s: is the picture really still, or did it stop?
                             gdi_probe[key] = now
                             probe = gdi_grab(mon)
                             if probe is not None and not same(probe, last.get(key)):
-                                print(f"[mirror] {mon['name']}: Desktop Duplication stopped, using GDI capture")
+                                print(f"{mon['name']}: Desktop Duplication stopped, using GDI capture", file=sys.stderr, flush=True)
                                 gdi[key] = True
                                 frame, fresh = probe, True
                     else:
                         frame = gdi_grab(mon)
                         fresh = frame is not None and not same(frame, last.get(key))
-                        if now - gdi_probe.get(key, 0) > 3:  # every few seconds: is Duplication back?
+                        if now - gdi_probe.get(key, 0) > 3:
                             gdi_probe[key] = now
                             cam = cams.get(key)
                             try:
                                 if cam is not None and cam.grab() is not None:
-                                    print(f"[mirror] {mon['name']}: Desktop Duplication is back")
+                                    print(f"{mon['name']}: Desktop Duplication is back", file=sys.stderr, flush=True)
                                     gdi[key] = False
                                     last_fresh[key] = now
                             except Exception:  # noqa: BLE001
@@ -284,47 +480,39 @@ class Mirror:
                         last[key] = frame
                     elif key not in last:
                         continue
-                    # an unchanged screen is still re-sent once a second (and the pointer may have moved)
-                    if not fresh and now - last_sent.get(key, 0) < 1.0 and not self._pointer_moved(mon):
+                    pointer = _cursor_pos()
+                    moved = pointer != self._last_pointer
+                    if not fresh and not self.refresh and now - last_sent.get(key, 0) < 1.0 and not moved:
                         continue
-                    viewers = [v for v in list(self.viewers.values()) if v.monitor == idx and v.in_flight < MAX_IN_FLIGHT]
-                    if not viewers:
+                    if self.credits <= 0:  # every phone still has two frames on the way: skip this one
                         continue
-                    jpeg = self._encode(last[key], max(v.width for v in viewers), mon, rects)
+                    self.credits -= 1
+                    self.refresh = False
+                    self._last_pointer = pointer
+                    jpeg = self.encode(last[key], self.want["width"], mon, pointer)
                     last_sent[key] = now
-                    for v in viewers:
-                        v.in_flight += 1
-                        self._send(v.ws, b"\x01" + jpeg)
-                self.error = None
+                    _emit(b"V", bytes([idx & 0xFF]) + jpeg)
+                _emit(b"E", b"")
             except Exception as e:  # noqa: BLE001  (monitor gone mid-capture, resolution change…)
-                self.error = f"Mirror: {e}"
-                print(f"[mirror] capture error, starting over: {e}")
+                print(f"capture error, starting over: {e}", file=sys.stderr, flush=True)
+                _emit(b"E", f"Mirror: {e}".encode())
                 release_all()
                 layout = None
                 self.monitors = []
                 time.sleep(0.5)
             time.sleep(max(0.0, 1 / FPS - (time.time() - start)))
 
-    _last_pointer: tuple | None = None
-
-    def _pointer_moved(self, mon) -> bool:
-        p = _cursor_pos()
-        moved = p != self._last_pointer
-        self._last_pointer = p
-        return moved
-
-    def _encode(self, frame, width: int, mon: dict, rects: list[dict]) -> bytes:
+    @staticmethod
+    def encode(frame, width: int, mon: dict, pointer) -> bytes:
         from PIL import Image, ImageDraw  # noqa: PLC0415
         img = Image.fromarray(frame)
         w = min(width, img.width)
         if w < img.width:
             img = img.resize((w, round(img.height * w / img.width)), Image.BILINEAR)
-        # draw the mouse pointer (Desktop Duplication leaves it out)
-        rect = mon.get("rect")
-        p = _cursor_pos()
-        if rect and p and rect["x"] <= p[0] < rect["x"] + rect["w"] and rect["y"] <= p[1] < rect["y"] + rect["h"]:
+        rect = mon.get("rect")  # draw the mouse pointer (Desktop Duplication leaves it out)
+        if rect and pointer and rect["x"] <= pointer[0] < rect["x"] + rect["w"] and rect["y"] <= pointer[1] < rect["y"] + rect["h"]:
             s = img.width / rect["w"]
-            x, y = (p[0] - rect["x"]) * s, (p[1] - rect["y"]) * s
+            x, y = (pointer[0] - rect["x"]) * s, (pointer[1] - rect["y"]) * s
             k = max(10, img.width / 90)
             arrow = [(x, y), (x, y + k * 1.5), (x + k * 0.42, y + k * 1.1), (x + k * 0.75, y + k * 1.75),
                      (x + k * 0.95, y + k * 1.65), (x + k * 0.62, y + k * 1.0), (x + k * 1.1, y + k * 1.0)]
@@ -333,67 +521,51 @@ class Mirror:
         img.save(b, "JPEG", quality=JPEG_QUALITY)
         return b.getvalue()
 
-    # ------------------------------------------------------------------ sound
-    def _audio_loop(self) -> None:
-        """Records what the PC plays while a phone wants sound; follows default-device changes."""
+
+def _audio_helper() -> None:
+    """Records what the PC plays and sends it on; follows default-device changes."""
+    import pyaudiowpatch as pyaudio  # noqa: PLC0415
+    _watch_parent()
+    while True:
+        p = stream = None
         try:
-            import pyaudiowpatch as pyaudio  # noqa: PLC0415
-        except Exception as e:  # noqa: BLE001
-            self.error = f"Mirror sound: {e}"
-            return
-        while True:
-            if not any(v.audio for v in list(self.viewers.values())):
-                time.sleep(0.3)
-                continue
-            p = stream = None
-            try:
-                p = pyaudio.PyAudio()
-                dev = p.get_default_wasapi_loopback()
-                rate, ch = int(dev["defaultSampleRate"]), max(1, min(2, int(dev["maxInputChannels"])))
-                self.audio_format = {"rate": rate, "channels": ch, "device": dev["name"].replace(" [Loopback]", "")}
-                head = b"\x02" + struct.pack("<IB", rate, ch)
+            p = pyaudio.PyAudio()
+            dev = p.get_default_wasapi_loopback()
+            rate, ch = int(dev["defaultSampleRate"]), max(1, min(2, int(dev["maxInputChannels"])))
+            head = b"\x02" + struct.pack("<IB", rate, ch)
 
-                def cb(data, frames, info, status):
-                    for v in list(self.viewers.values()):
-                        if v.audio:
-                            self._send(v.ws, head + data, audio=True)
-                    return None, pyaudio.paContinue
+            def cb(data, frames, info, status):
+                _emit(b"A", head + data)
+                return None, pyaudio.paContinue
 
-                stream = p.open(format=pyaudio.paInt16, channels=ch, rate=rate, input=True,
-                                input_device_index=dev["index"], frames_per_buffer=rate // 50, stream_callback=cb)
-                stream.start_stream()
-                name = dev["name"]
-                # keep going until nobody wants sound or the default output device changes
-                while any(v.audio for v in list(self.viewers.values())) and stream.is_active():
-                    time.sleep(1)
-                    try:
-                        if p.get_default_wasapi_loopback()["name"] != name:
-                            break
-                    except Exception:  # noqa: BLE001
-                        break
-            except Exception as e:  # noqa: BLE001  (no output device, device unplugged…)
-                self.error = f"Mirror sound: {e}"
-                time.sleep(2)
-            finally:
+            stream = p.open(format=pyaudio.paInt16, channels=ch, rate=rate, input=True,
+                            input_device_index=dev["index"], frames_per_buffer=rate // 50, stream_callback=cb)
+            stream.start_stream()
+            name = dev["name"]
+            _emit(b"E", b"")
+            while stream.is_active():  # until the default output device changes
+                time.sleep(1)
                 try:
-                    if stream:
-                        stream.stop_stream(); stream.close()
-                    if p:
-                        p.terminate()
+                    if p.get_default_wasapi_loopback()["name"] != name:
+                        break
                 except Exception:  # noqa: BLE001
-                    pass
+                    break
+        except Exception as e:  # noqa: BLE001  (no output device, device unplugged…)
+            _emit(b"E", f"Mirror sound: {e}".encode())
+            time.sleep(2)
+        finally:
+            try:
+                if stream:
+                    stream.stop_stream(); stream.close()
+                if p:
+                    p.terminate()
+            except Exception:  # noqa: BLE001
+                pass
 
-    # ------------------------------------------------------------------ sending (on the agent's event loop)
-    def _send(self, ws, data: bytes, audio: bool = False) -> None:
-        if self.loop is None:
-            return
-        self.loop.call_soon_threadsafe(asyncio.ensure_future, self._send_async(ws, data, audio))
 
-    async def _send_async(self, ws, data: bytes, audio: bool) -> None:
-        try:
-            # don't pile up sound behind a slow link: better a short gap than growing delay
-            if audio and ws.transport is not None and ws.transport.get_write_buffer_size() > 256_000:
-                return
-            await ws.send(data)
-        except Exception:  # noqa: BLE001  (phone went away)
-            self.viewers.pop(ws, None)
+if __name__ == "__main__" and len(sys.argv) >= 3 and sys.argv[1] == "--helper":
+    sys.coinit_flags = 0  # multithreaded COM, like PerfLink
+    if sys.argv[2] == "video":
+        _VideoHelper().run()
+    elif sys.argv[2] == "audio":
+        _audio_helper()

@@ -4,6 +4,10 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
@@ -107,8 +111,10 @@ class MainActivity : ComponentActivity() {
         // (used with `adb reverse tcp:47800 tcp:47800` for USB mode)
         if (savedInstanceState == null) intent?.getStringExtra("host")?.let { vm.connect(it) }
         val startPage = intent?.getIntExtra("page", 0) ?: 0  // `-ei page 1` opens on that page
+        simulatedAspect = intent?.getFloatExtra("sim_aspect", 0f)?.takeIf { it > 0f }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Palette.accent, background = Palette.bg, surface = Palette.card)) {
+              ScaledToScreen {
                 val state by vm.state.collectAsStateWithLifecycle()
                 // Keep the screen awake while watching stats
                 val connected = state.conn != Conn.Idle
@@ -128,6 +134,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 4.dp),
                     )
                 }
+              }
             }
         }
     }
@@ -198,6 +205,40 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
         Text("Port $WS_PORT · discovery UDP $DISCOVERY_PORT", color = Palette.dim, fontSize = 12.sp)
     }
 }
+
+// =============================================================================== screen size
+/** The pages are laid out for a 640×360 dp landscape screen (a typical 5–6" phone). On any other phone
+ *  or tablet everything (sizes, text, spacing, icons) is scaled together to fit the screen's height,
+ *  never more than its width allows, so nothing is cut off on small screens or tiny on big ones; extra
+ *  width (long 20:9 phones) goes to the parts that stretch (graphs, lists, the touchpad…). A very large
+ *  font-size setting is capped so it can't break the layouts. */
+@Composable
+fun ScaledToScreen(content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val base = LocalDensity.current
+        // testing: `--ef sim_aspect 2.22` draws the app as a screen of that shape (e.g. a 20:9 phone or a
+        // 4:3 tablet), shrunk to fit this one, to check every layout without that device
+        val sim = simulatedAspect
+        var w = maxWidth; var h = maxHeight
+        if (sim != null && sim > 0f) {   // the largest screen of that shape that fits on this one
+            if (maxWidth / maxHeight < sim) h = maxWidth / sim else w = maxHeight * sim
+        }
+        val scale = minOf(h.value / DESIGN_HEIGHT_DP, w.value / DESIGN_MIN_WIDTH_DP).coerceIn(0.75f, 2f)
+        val density = Density(base.density * scale, base.fontScale.coerceIn(0.85f, 1.15f))
+        Box(
+            if (sim == null) Modifier.fillMaxSize()
+            else Modifier.size(w, h).border(1.dp, Color(0x66FFFFFF))
+        ) {
+            CompositionLocalProvider(LocalDensity provides density) { content() }
+        }
+    }
+}
+
+/** Set from the `sim_aspect` launch extra (testing other screen shapes); null = this phone's own screen. */
+var simulatedAspect: Float? = null
+
+private const val DESIGN_HEIGHT_DP = 360f
+private const val DESIGN_MIN_WIDTH_DP = 600f
 
 // =============================================================================== Dashboard
 // Page order, in one place (the page number is the position here; `-ei page N` opens page N):

@@ -79,7 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.11"
+VERSION = "1.12"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {

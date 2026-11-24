@@ -158,7 +158,7 @@ private fun aqiColor(label: String, aqi: Double?): Color? = if (label != "AIR QU
 private fun ColumnScope.Forecast(d: WeatherDetail) {
     Text("NEXT 24 HOURS", color = Palette.dim, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     Spacer(Modifier.height(3.dp))
-    LazyRow(Modifier.fillMaxWidth().height(70.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x0FFFFFFF)),
+    LazyRow(Modifier.fillMaxWidth().height(84.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x0FFFFFFF)),
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         items(d.hourly) { h ->
             Column(Modifier.width(42.dp).padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {

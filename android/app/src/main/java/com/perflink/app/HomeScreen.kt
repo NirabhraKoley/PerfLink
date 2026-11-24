@@ -146,9 +146,9 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val density = LocalDensity.current
-            // Scale the clock to the space left (date + weather take ~80dp below it)
+            // Scale the clock to the space left (date + two weather lines take ~100dp below it)
             val clockSp = with(density) {
-                minOf((maxHeight - 80.dp) * 0.92f, maxWidth / 3.4f).coerceAtLeast(30.dp).toSp()
+                minOf((maxHeight - 100.dp) * 0.92f, maxWidth / 3.4f).coerceAtLeast(30.dp).toSp()
             }
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
                 Row(verticalAlignment = Alignment.Top) {
