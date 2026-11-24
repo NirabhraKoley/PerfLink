@@ -3,7 +3,8 @@ Screen mirroring for PerfLink's "Mirror" page: the PC's screen (any monitor) and
 the phone, over Wi-Fi or USB (the same WebSocket as everything else).
 
   Video: Windows Desktop Duplication (dxcam), only changed frames, about 30 per second, scaled to
-         the phone and sent as JPEG, with the mouse pointer drawn in. Flow control: at most two
+         the phone and sent as JPEG, with the mouse pointer drawn in. Falls back to GDI capture (mss)
+         when Duplication stops, and follows monitors being switched off / on. Flow control: at most two
          frames are on their way to a phone, so a slow link drops frames instead of lagging behind.
   Sound: WASAPI loopback of the PC's default output (exactly what the PC plays), 16-bit PCM.
 
@@ -113,11 +114,19 @@ class Mirror:
         return {"monitors": self.monitors, "error": self.error, "streaming": len(self.viewers)}
 
     # ------------------------------------------------------------------ video
-    def _list_monitors(self) -> None:
+    def _list_monitors(self, refresh: bool = False) -> None:
         import dxcam  # noqa: PLC0415  (loaded on first use: needs COM, see _video_loop)
-        info = dxcam.output_info()
+        if refresh:  # monitors changed (one switched off / on): make dxcam look again
+            factory = dxcam.__dict__.get("__factory")
+            if factory is not None:
+                try:
+                    factory.clean_up()
+                except Exception:  # noqa: BLE001
+                    pass
+                factory.__init__()
+        rects = _monitor_rects()
         mons = []
-        for line in info.strip().splitlines():
+        for line in dxcam.output_info().strip().splitlines():
             # "Device[0] Output[1]: Res:(1366, 768) Rot:0 Primary:False"
             try:
                 dev = int(line.split("Device[")[1].split("]")[0])
@@ -128,72 +137,139 @@ class Mirror:
                 continue
             mons.append({"index": len(mons), "device": dev, "output": out, "w": w, "h": h, "primary": primary})
         mons.sort(key=lambda m: (not m["primary"], m["index"]))  # the main monitor first
+        used = set()
         for i, m in enumerate(mons):
             m["index"] = i
             m["name"] = f"Monitor {i + 1}" + (" (main)" if m["primary"] else "") + f" · {m['w']}×{m['h']}"
+            # where it sits on the desktop (for the pointer, and for the GDI fallback)
+            r = next((k for k, r in enumerate(rects) if k not in used and r["w"] == m["w"] and r["h"] == m["h"]
+                      and r["primary"] == m["primary"]), None)
+            if r is not None:
+                used.add(r)
+                m["rect"] = rects[r]
         self.monitors = mons
 
     def _video_loop(self) -> None:
+        """Desktop Duplication (fast) with two safety nets, so the phone never freezes:
+        - the monitor layout is checked every frame: when a monitor is switched off (many DisplayPort
+          monitors then vanish from Windows) or on, everything is rebuilt for the monitors left;
+        - if Desktop Duplication stops delivering while the picture is still changing (a monitor
+          that's off but still listed), it switches to GDI capture (mss) until Duplication works again."""
         try:
             import comtypes  # noqa: PLC0415
             comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
         except Exception:  # noqa: BLE001
             pass
+        import numpy as np  # noqa: PLC0415
         cams: dict[int, object] = {}
-        last: dict[int, object] = {}       # last frame per monitor (sent again to phones that just joined)
+        last: dict[int, object] = {}        # last frame per monitor (sent again to phones that just joined)
         last_sent: dict[int, float] = {}
+        last_fresh: dict[int, float] = {}   # when Desktop Duplication last gave a new frame
+        gdi: dict[int, bool] = {}           # monitors currently captured with GDI instead
+        gdi_probe: dict[int, float] = {}
+        layout = None
+        grabber = None
+
+        def release_all():
+            for c in cams.values():
+                try:
+                    c.release()
+                except Exception:  # noqa: BLE001
+                    pass
+            cams.clear(); last.clear(); last_fresh.clear(); gdi.clear()
+
+        def gdi_grab(mon):
+            nonlocal grabber
+            r = mon.get("rect")
+            if not r:
+                return None
+            if grabber is None:
+                import mss  # noqa: PLC0415
+                grabber = mss.MSS() if hasattr(mss, "MSS") else mss.mss()
+            shot = grabber.grab({"left": r["x"], "top": r["y"], "width": r["w"], "height": r["h"]})
+            return np.frombuffer(shot.bgra, np.uint8).reshape(shot.height, shot.width, 4)[:, :, 2::-1]
+
+        def same(a, b) -> bool:
+            return a is not None and b is not None and a.shape == b.shape and np.array_equal(a[::16, ::16], b[::16, ::16])
+
         while True:
             if not self.viewers:
-                for c in cams.values():
-                    try:
-                        c.release()
-                    except Exception:  # noqa: BLE001
-                        pass
-                cams.clear(); last.clear()
+                release_all()
                 self._wake.wait(); self._wake.clear()
                 continue
             start = time.time()
             try:
-                if not self.monitors:
-                    self._list_monitors()
                 rects = _monitor_rects()
+                now_layout = tuple((r["x"], r["y"], r["w"], r["h"], r["primary"]) for r in rects)
+                if now_layout != layout or not self.monitors:
+                    if layout is not None:
+                        print(f"[mirror] monitors changed: {len(rects)} now")
+                    release_all()
+                    self._list_monitors(refresh=layout is not None)
+                    layout = now_layout
                 wanted = {v.monitor for v in list(self.viewers.values())}
                 for idx in wanted:
+                    # a monitor that's gone (switched off): show the main one instead
                     mon = next((m for m in self.monitors if m["index"] == idx), None) or (self.monitors or [None])[0]
                     if mon is None:
                         continue
-                    cam = cams.get(mon["index"])
-                    if cam is None:
-                        import dxcam  # noqa: PLC0415
-                        cam = dxcam.create(device_idx=mon["device"], output_idx=mon["output"], output_color="RGB")
-                        cams[mon["index"]] = cam
-                    frame = cam.grab()
-                    fresh = frame is not None
+                    key, now = mon["index"], time.time()
+                    frame, fresh = None, False
+                    if not gdi.get(key):
+                        cam = cams.get(key)
+                        if cam is None:
+                            import dxcam  # noqa: PLC0415
+                            cam = dxcam.create(device_idx=mon["device"], output_idx=mon["output"], output_color="RGB")
+                            cams[key] = cam
+                            last_fresh[key] = now
+                        frame = cam.grab()
+                        fresh = frame is not None
+                        if fresh:
+                            last_fresh[key] = now
+                        elif now - last_fresh.get(key, now) > 1.5 and now - gdi_probe.get(key, 0) > 1.5:
+                            # Duplication quiet for 1.5 s: is the picture really still, or did it stop?
+                            gdi_probe[key] = now
+                            probe = gdi_grab(mon)
+                            if probe is not None and not same(probe, last.get(key)):
+                                print(f"[mirror] {mon['name']}: Desktop Duplication stopped, using GDI capture")
+                                gdi[key] = True
+                                frame, fresh = probe, True
+                    else:
+                        frame = gdi_grab(mon)
+                        fresh = frame is not None and not same(frame, last.get(key))
+                        if now - gdi_probe.get(key, 0) > 3:  # every few seconds: is Duplication back?
+                            gdi_probe[key] = now
+                            cam = cams.get(key)
+                            try:
+                                if cam is not None and cam.grab() is not None:
+                                    print(f"[mirror] {mon['name']}: Desktop Duplication is back")
+                                    gdi[key] = False
+                                    last_fresh[key] = now
+                            except Exception:  # noqa: BLE001
+                                pass
                     if fresh:
-                        last[mon["index"]] = frame
-                    elif mon["index"] not in last:
+                        last[key] = frame
+                    elif key not in last:
                         continue
                     # an unchanged screen is still re-sent once a second (and the pointer may have moved)
-                    if not fresh and time.time() - last_sent.get(mon["index"], 0) < 1.0 and not self._pointer_moved(mon):
+                    if not fresh and now - last_sent.get(key, 0) < 1.0 and not self._pointer_moved(mon):
                         continue
                     viewers = [v for v in list(self.viewers.values()) if v.monitor == idx and v.in_flight < MAX_IN_FLIGHT]
                     if not viewers:
                         continue
-                    jpeg = self._encode(last[mon["index"]], max(v.width for v in viewers), mon, rects)
-                    last_sent[mon["index"]] = time.time()
+                    jpeg = self._encode(last[key], max(v.width for v in viewers), mon, rects)
+                    last_sent[key] = now
                     for v in viewers:
                         v.in_flight += 1
                         self._send(v.ws, b"\x01" + jpeg)
                 self.error = None
-            except Exception as e:  # noqa: BLE001  (monitor unplugged / switched off and gone, resolution change…)
+            except Exception as e:  # noqa: BLE001  (monitor gone mid-capture, resolution change…)
                 self.error = f"Mirror: {e}"
-                for c in cams.values():
-                    try:
-                        c.release()
-                    except Exception:  # noqa: BLE001
-                        pass
-                cams.clear(); last.clear(); self.monitors = []
-                time.sleep(1)
+                print(f"[mirror] capture error, starting over: {e}")
+                release_all()
+                layout = None
+                self.monitors = []
+                time.sleep(0.5)
             time.sleep(max(0.0, 1 / FPS - (time.time() - start)))
 
     _last_pointer: tuple | None = None
@@ -211,7 +287,7 @@ class Mirror:
         if w < img.width:
             img = img.resize((w, round(img.height * w / img.width)), Image.BILINEAR)
         # draw the mouse pointer (Desktop Duplication leaves it out)
-        rect = next((r for r in rects if r["w"] == mon["w"] and r["h"] == mon["h"] and r["primary"] == mon["primary"]), None)
+        rect = mon.get("rect")
         p = _cursor_pos()
         if rect and p and rect["x"] <= p[0] < rect["x"] + rect["w"] and rect["y"] <= p[1] < rect["y"] + rect["h"]:
             s = img.width / rect["w"]
