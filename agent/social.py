@@ -9,10 +9,16 @@ its notification and it disappears from the phone as well.
 
 Only apps that are running are shown. Windows doesn't say whether an app is signed in, but an
 app that isn't signed in doesn't get messages.
+
+Web apps: some "apps" (Instagram from the Microsoft Store, Messenger, X, LinkedIn…) are websites in an
+Edge or Chrome app window. They're recognised by their window title, and their notifications, which
+Windows files under the browser, by the website they come from.
 """
 from __future__ import annotations
 
+import ctypes
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -43,6 +49,53 @@ APPS = [
 ]
 
 
+# window titles of each app (also when it's a web app in a browser window or tab)
+TITLES = {
+    "whatsapp": r"\bWhatsApp\b", "telegram": r"\bTelegram\b", "discord": r"\bDiscord\b",
+    "instagram": r"\bInstagram\b", "messenger": r"\bMessenger\b", "facebook": r"\bFacebook\b",
+    "signal": r"^Signal\b", "slack": r"\bSlack\b", "teams": r"Microsoft Teams", "skype": r"\bSkype\b",
+    "viber": r"\bViber\b", "x": r"(/ X$|\bTwitter\b)", "linkedin": r"\bLinkedIn\b", "wechat": r"\bWeChat\b",
+}
+# websites, for notifications that Windows files under a browser (web apps)
+SITES = {
+    "instagram.com": "instagram", "messenger.com": "messenger", "facebook.com": "facebook",
+    "x.com": "x", "twitter.com": "x", "linkedin.com": "linkedin", "web.whatsapp.com": "whatsapp",
+    "discord.com": "discord", "web.telegram.org": "telegram", "teams.microsoft.com": "teams",
+    "teams.live.com": "teams", "app.slack.com": "slack",
+}
+_BROWSERS = re.compile(r"msedge|microsoftedge|chrome|brave|opera|vivaldi|firefox|_crx_", re.I)
+
+
+def _window_titles() -> list[str]:
+    """Titles of the visible top-level windows."""
+    user32 = ctypes.windll.user32
+    titles: list[str] = []
+    proto = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def each(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            n = user32.GetWindowTextLengthW(hwnd)
+            if n:
+                buf = ctypes.create_unicode_buffer(n + 1)
+                user32.GetWindowTextW(hwnd, buf, n + 1)
+                titles.append(buf.value)
+        return True
+
+    try:
+        user32.EnumWindows(proto(each), 0)
+    except Exception:  # noqa: BLE001
+        pass
+    return titles
+
+
+def _site_app(*texts: str) -> str | None:
+    blob = " ".join(texts).lower()
+    for site, key in SITES.items():
+        if site in blob:
+            return key
+    return None
+
+
 def _running_apps() -> set[str]:
     """Keys of the apps above that have a process running (by name, or Store apps by their folder)."""
     names, paths = set(), []
@@ -56,6 +109,10 @@ def _running_apps() -> set[str]:
     for key, _, _, procs, pkg in APPS:
         if any(n in names for n in procs) or (pkg and any(pkg in x for x in paths)):
             out.add(key)
+    for title in _window_titles():  # web apps (Edge / Chrome app windows and tabs)
+        for key, pat in TITLES.items():
+            if re.search(pat, title):
+                out.add(key)
     return out
 
 
@@ -73,7 +130,7 @@ def read_all(db_path: str = DB) -> tuple[set[str], dict[str, list[dict]]]:
     try:
         handlers = {}
         for rid, primary in con.execute("SELECT RecordId, PrimaryId FROM NotificationHandler"):
-            key = _app_for(primary or "")
+            key = _app_for(primary or "") or ("@browser" if _BROWSERS.search(primary or "") else None)
             if key:
                 handlers[rid] = key
         if not handlers:
@@ -87,15 +144,19 @@ def read_all(db_path: str = DB) -> tuple[set[str], dict[str, list[dict]]]:
     out: dict[str, list[dict]] = {}
     for nid, hid, payload, arrival in rows:
         key = handlers[hid]
-        if len(out.get(key, [])) >= MAX_PER_APP:
-            continue
         t = parse_toast(payload)
         if not t:
+            continue
+        if key == "@browser":  # a web app's notification: which website sent it?
+            key = _site_app(t.get("attribution", ""), t.get("launch", ""), t["title"])
+            if not key:
+                continue
+        if len(out.get(key, [])) >= MAX_PER_APP:
             continue
         kind, count = classify(t["title"], t["text"], t["scenario"], t["actions"])
         out.setdefault(key, []).append({"id": f"{key}-{nid}", "title": t["title"], "text": t["text"],
                                         "t": _filetime_to_unix(arrival), "kind": kind, "count": count})
-    return set(handlers.values()), out
+    return {k for k in handlers.values() if k != "@browser"} | set(out), out
 
 
 class SocialApps:

@@ -53,7 +53,9 @@ def parse_toast(payload) -> dict | None:
         root = ET.fromstring(payload)
     except ET.ParseError:
         return None
-    texts = [(t.text or "").strip() for t in root.iter("text")]
+    # the "attribution" line (e.g. "instagram.com" on a web app's notification) isn't part of the message
+    attribution = " ".join((t.text or "").strip() for t in root.iter("text") if t.get("placement") == "attribution")
+    texts = [(t.text or "").strip() for t in root.iter("text") if t.get("placement") != "attribution"]
     texts = [t for t in texts if t]
     if not texts:
         return None
@@ -61,7 +63,7 @@ def parse_toast(payload) -> dict | None:
     text = " ".join(texts[1:]) if len(texts) > 1 else ""
     actions = [(a.get("content") or "").strip() for a in root.iter("action")]
     return {"title": title, "text": re.sub(r"\s+", " ", text), "scenario": root.get("scenario") or "",
-            "actions": [a for a in actions if a]}
+            "actions": [a for a in actions if a], "attribution": attribution, "launch": root.get("launch") or ""}
 
 
 _CALL = re.compile(r"\b(voice|video|missed|incoming|outgoing)\s+(group\s+)?call\b|\bcalling\b|\bmissed call", re.I)
