@@ -608,7 +608,9 @@ async def main() -> None:
         agent.update_tray()
     # USB: re-creates the adb tunnel on replug, and installs/updates the phone app from the latest release
     agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),
-                             notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None)
+                             notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None,
+                             usb_connected=lambda: any(c.remote_address[0] in ("127.0.0.1", "::1")
+                                                       for c in list(agent.clients)))
     loop = asyncio.get_running_loop()
     obs_task = asyncio.create_task(agent.obs.run())  # noqa: F841  (kept alive for the agent's lifetime)
     await loop.create_datagram_endpoint(Discovery, local_addr=("0.0.0.0", DISCOVERY_PORT))

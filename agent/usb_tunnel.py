@@ -55,11 +55,17 @@ def _version_tuple(v: str | None) -> tuple:
 
 
 class UsbTunnel:
-    def __init__(self, agent_port: int, interval: float = 3.0, repo: str | None = None, notify=None) -> None:
+    def __init__(self, agent_port: int, interval: float = 3.0, repo: str | None = None, notify=None,
+                 usb_connected=None) -> None:
         self.agent_port = agent_port
         self.interval = interval
         self.repo = repo or DEFAULT_REPO
         self.notify = notify or (lambda title, text: None)
+        # does any phone use the USB tunnel right now? (the agent sees it as a client from 127.0.0.1)
+        self.usb_connected = usb_connected or (lambda: True)
+        self._plugged_at: dict[str, float] = {}  # phone -> when it was plugged in (seen by adb)
+        self._opened: set[str] = set()           # phones whose app we already opened this plug-in
+        self._installing: set[str] = set()
         self.adb = find_adb()
         self.phones: list[str] = []
         self._checked: set[str] = set()      # phones already checked for app updates while plugged in
@@ -104,10 +110,34 @@ class UsbTunnel:
                 if s not in self._checked:
                     self._checked.add(s)
                     threading.Thread(target=self._update_app, args=(s,), daemon=True).start()
+                self._maybe_open_app(s)
             # forget unplugged phones, so they're checked again next time they're plugged in
             self._checked &= set(serials)
+            self._opened &= set(serials)
+            self._plugged_at = {k: v for k, v in self._plugged_at.items() if k in serials}
             self.phones = serials
             time.sleep(self.interval)
+
+    def _maybe_open_app(self, serial: str) -> None:
+        """Phone plugged in but its PerfLink app isn't connected (closed, or waiting on its 'connect to
+        a PC' screen, which can't find the PC without Wi-Fi): open it, connected over USB. Once per
+        plug-in, so it never keeps popping up if the user closes it on purpose."""
+        now = time.time()
+        first = self._plugged_at.setdefault(serial, now)
+        if serial in self._opened or serial in self._installing or now - first < 10:
+            return
+        try:
+            if self.usb_connected():
+                self._opened.add(serial)  # already connected: nothing to do this plug-in
+                return
+        except Exception:  # noqa: BLE001
+            return
+        if not self._installed_version(serial):
+            return  # app not installed (yet): _update_app installs and opens it
+        self._opened.add(serial)
+        r = self._run("-s", serial, "shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity", "-e", "host", "127.0.0.1")
+        print(f"[usb] phone {serial}: opened the PerfLink app over USB" if r.returncode == 0
+              else f"[usb] phone {serial}: couldn't open the app: {(r.stdout + r.stderr).strip()[-120:]}")
 
     # ------------------------------------------------------------------ app install / update
     def _installed_version(self, serial: str) -> str | None:
@@ -166,6 +196,7 @@ class UsbTunnel:
                 return
             what = f"Updating PerfLink {installed} → {info['version']}" if installed else f"Installing PerfLink {info['version']}"
             print(f"[usb] phone {serial}: {what}")
+            self._installing.add(serial)
             r = self._run("-s", serial, "install", "-r", apk, timeout=180)
             text = (r.stdout + r.stderr).strip()
             if "Success" in text:
@@ -182,3 +213,5 @@ class UsbTunnel:
                 print(f"[usb] install failed: {text[-200:]}")
         except Exception as e:  # noqa: BLE001
             print(f"[usb] app update error: {e}")
+        finally:
+            self._installing.discard(serial)
