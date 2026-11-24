@@ -6,3 +6,8 @@ winrt-runtime>=2.0
 winrt-Windows.Media.Control>=2.0
 winrt-Windows.Foundation>=2.0
 winrt-Windows.Storage.Streams>=2.0
+# Mirror page: screen capture, image encoding, PC sound
+dxcam>=0.0.5
+numpy>=1.26
+Pillow>=10.0
+PyAudioWPatch>=0.2.12

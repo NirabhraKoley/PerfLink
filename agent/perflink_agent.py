@@ -70,6 +70,7 @@ from wifi import WifiStatus
 from whatsapp import WhatsAppNotifications
 import remote_input
 from social import SocialApps
+from mirror import Mirror
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
 from extras import Media, Volume, load_config, save_config
@@ -79,7 +80,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.7"
+VERSION = "1.8"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -395,6 +396,7 @@ class Agent:
         self.wifi = WifiStatus()
         self.whatsapp = WhatsAppNotifications()
         self.social = SocialApps(self.whatsapp)
+        self.mirror = Mirror()  # screen + sound to the phone's Mirror page (idle until asked)
         self.obs_viewers: set = set()  # phones currently showing the OBS page (get previews)
         self._last_preview: str | None = None
 
@@ -468,6 +470,7 @@ class Agent:
         snap["wifi"] = self.wifi.snapshot()
         snap["whatsapp"] = self.whatsapp.snapshot()
         snap["social"] = self.social.snapshot()
+        snap["mirror"] = self.mirror.snapshot()
         return snap
 
     async def push(self) -> None:
@@ -528,6 +531,9 @@ class Agent:
                     continue  # the agent takes no binary messages
                 try:
                     msg = json.loads(raw)
+                    if msg.get("cmd") in ("mirror", "mirror_ack"):  # Mirror page: screen + sound
+                        self.mirror.command(ws, msg)
+                        continue
                     if msg.get("cmd") == "input":  # Remote page: touchpad + keyboard (fast path, no reply)
                         remote_input.handle(msg)
                         continue
@@ -562,6 +568,7 @@ class Agent:
             pass
         finally:
             self.clients.discard(ws)
+            self.mirror.drop(ws)
             self.obs_viewers.discard(ws)
             self.obs.preview_wanted = bool(self.obs_viewers)
             print(f"[-] phone disconnected: {ws.remote_address[0]}")
@@ -600,6 +607,8 @@ async def main() -> None:
     ap.add_argument("--port", type=int, default=WS_PORT, help="WebSocket port (default 47800)")
     ap.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT, help="UDP discovery port (default 47801)")
     ap.add_argument("--tray", action="store_true", help="run in the background with a system-tray icon (no console)")
+    ap.add_argument("--no-usb", action="store_true",
+                    help="don't manage the USB tunnel / phone app (e.g. a second test copy next to the installed one)")
     args = ap.parse_args()
     WS_PORT, DISCOVERY_PORT = args.port, args.discovery_port
 
@@ -623,11 +632,13 @@ async def main() -> None:
         agent.tray = Tray(on_quit=_quit)
         agent.update_tray()
     # USB: re-creates the adb tunnel on replug, and installs/updates the phone app from the latest release
-    agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),
-                             notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None,
-                             usb_connected=lambda: any(c.remote_address[0] in ("127.0.0.1", "::1")
-                                                       for c in list(agent.clients)))
+    if not args.no_usb:
+        agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),
+                                 notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None,
+                                 usb_connected=lambda: any(c.remote_address[0] in ("127.0.0.1", "::1")
+                                                           for c in list(agent.clients)))
     loop = asyncio.get_running_loop()
+    agent.mirror.loop = loop
     obs_task = asyncio.create_task(agent.obs.run())  # noqa: F841  (kept alive for the agent's lifetime)
     await loop.create_datagram_endpoint(Discovery, local_addr=("0.0.0.0", DISCOVERY_PORT))
     async with websockets.serve(agent.handler, "0.0.0.0", WS_PORT, ping_interval=10):

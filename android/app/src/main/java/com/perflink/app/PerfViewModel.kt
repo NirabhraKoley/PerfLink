@@ -22,6 +22,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -196,6 +197,22 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 _state.update { it.copy(conn = Conn.Connected, error = null) }
                 if (obsViewing) webSocket.send(JSONObject().put("cmd", "obs_view").put("on", true).toString())
+                if (mirrorOn) webSocket.send(mirrorCommand(true).toString())
+            }
+
+            // Mirror page: 0x01 + JPEG = a screen frame, 0x02 + format + PCM = PC sound
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (webSocket != socket) return
+                lastMessageAt = System.currentTimeMillis()
+                val data = bytes.toByteArray()
+                if (data.isEmpty() || !mirrorOn) return
+                when (data[0].toInt()) {
+                    1 -> {
+                        mirrorFrames.decode(data, 1)?.let { mirrorFrame.value = it }
+                        webSocket.send("{\"cmd\": \"mirror_ack\"}")  // ready for the next frame
+                    }
+                    2 -> if (mirrorSound) mirrorAudio.play(data)
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -306,6 +323,29 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         socket?.send(o.toString())
     }
 
+    // ---------------------------------------------------------------- Mirror page
+    val mirrorFrame = MutableStateFlow<ImageBitmap?>(null)
+    private val mirrorFrames = MirrorFrames()
+    private val mirrorAudio = MirrorAudio()
+    @Volatile private var mirrorOn = false
+    @Volatile var mirrorSound = true
+        private set
+    var mirrorMonitor = 0
+        private set
+
+    private fun mirrorCommand(on: Boolean) = JSONObject().put("cmd", "mirror").put("on", on)
+        .put("monitor", mirrorMonitor).put("audio", mirrorSound)
+        .put("width", getApplication<Application>().resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) })
+
+    /** Start / stop the PC streaming its screen (and sound) to this phone. */
+    fun mirror(on: Boolean, monitor: Int = mirrorMonitor, sound: Boolean = mirrorSound) {
+        if (monitor != mirrorMonitor) mirrorFrames.clear()
+        mirrorOn = on; mirrorMonitor = monitor; mirrorSound = sound
+        if (!on || !sound) mirrorAudio.stop()
+        if (!on) { mirrorFrame.value = null; mirrorFrames.clear() }
+        send(mirrorCommand(on))
+    }
+
     /** Remote page: mouse / keyboard input for the PC ("move", "click", "button", "scroll", "text", "key"). */
     fun input(type: String, build: JSONObject.() -> Unit = {}) =
         send(JSONObject().put("cmd", "input").put("type", type).apply(build))
@@ -380,6 +420,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         wantConnected = false
         socket?.cancel()
+        mirrorAudio.stop()
     }
 }
 

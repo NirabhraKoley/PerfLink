@@ -201,10 +201,10 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
 
 // =============================================================================== Dashboard
 // Page order: gaming stats first, then system info, then controls.
-// Pages loop, so Social (last) is one swipe left of Home, then Weather, Remote and Launcher.
+// Pages loop, so Mirror (last) is one swipe left of Home, then Social, Weather, Remote and Launcher.
 //   0 Home · 1 Performance · 2 Overlay · 3 Processes · 4 USB · 5 Bluetooth · 6 Sessions · 7 OBS · 8 Launcher
-//   · 9 Remote (mouse and keyboard) · 10 Weather · 11 Social (one swipe left of Home)
-private const val PAGES = 12
+//   · 9 Remote (mouse and keyboard) · 10 Weather · 11 Social · 12 Mirror (one swipe left of Home)
+private const val PAGES = 13
 private const val WEATHER_PAGE = 10
 private const val OBS_PAGE = 7
 
@@ -251,7 +251,8 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 page == 8 -> LauncherPage(state, vm::action)
                 page == 9 -> RemotePage(state, vm)
                 page == WEATHER_PAGE -> WeatherPage(state)
-                else -> SocialPage(state)
+                page == 11 -> SocialPage(state)
+                else -> MirrorPage(state, vm)
             }
         }
         // Only ask the PC for OBS preview frames while the OBS page is showing

@@ -230,7 +230,10 @@ data class Stats(
     val whatsapp: WhatsApp? = null,
     val weatherDetail: WeatherDetail? = null,
     val social: List<SocialApp>? = null,
+    val monitors: List<Monitor>? = null,
 )
+
+data class Monitor(val index: Int, val name: String, val w: Int, val h: Int, val primary: Boolean)
 
 private fun parseProcs(p: JSONObject) = ProcList(
     apps = p.optJSONArray("apps").mapObj { o ->
@@ -301,6 +304,9 @@ fun parseStats(text: String): Stats? = try {
             weather = o.optJSONObject("weather")?.let { parseWeather(it) },
             weatherDetail = o.optJSONObject("weather_detail")?.let { parseWeatherDetail(it) },
             social = o.optJSONObject("social")?.let { parseSocial(it) },
+            monitors = o.optJSONObject("mirror")?.optJSONArray("monitors").mapObj { m ->
+                Monitor(m.optInt("index"), m.optString("name"), m.optInt("w"), m.optInt("h"), m.optBoolean("primary"))
+            }.takeIf { o.has("mirror") },
             ai = o.optJSONObject("ai")?.let { parseAi(it) },
             processes = o.optJSONObject("processes")?.let { parseProcs(it) },
             launcherHints = o.optJSONObject("launcher")?.let { l -> l.keys().asSequence().associateWith { l.s(it) } }
