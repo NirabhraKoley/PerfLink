@@ -9,7 +9,9 @@ stops: PerfLink keeps running, logs the crash, restarts the helper, and after re
 that part off and says so on the phone.
 
   Video helper: Desktop Duplication (dxcam), only changed frames, about 30 per second, scaled to the
-         phone and sent as JPEG with the mouse pointer drawn in. Falls back to GDI capture (mss) when
+         phone and sent as JPEG with the mouse pointer drawn in. If Desktop Duplication crashes on a PC
+         (some laptop graphics setups), the helper is restarted in compatibility mode ("--gdi"): plain
+         GDI screen capture (mss), a little slower but works practically everywhere. Falls back to GDI capture (mss) when
          Duplication stops, and follows monitors being switched off / on. Flow control: it only
          encodes a frame when a phone is ready for one (at most two on their way).
   Audio helper: WASAPI loopback of the PC's default output (exactly what the PC plays), 16-bit PCM.
@@ -103,6 +105,7 @@ class _Helper:
         self.disabled_until = 0.0
         self.error: str | None = None
         self.on_start = lambda: None
+        self.extra: list[str] = []     # extra helper arguments ("--gdi" once the fast capture has crashed)
         self._lock = threading.Lock()
 
     def want(self, on: bool) -> None:
@@ -134,7 +137,8 @@ class _Helper:
             if time.time() < self.disabled_until or (self.proc is not None and self.proc.poll() is None):
                 return
             try:
-                self.proc = subprocess.Popen([self._python(), os.path.join(HERE, "mirror.py"), "--helper", self.kind],
+                self.proc = subprocess.Popen([self._python(), os.path.join(HERE, "mirror.py"), "--helper", self.kind,
+                                              *self.extra],
                                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                              cwd=os.path.expanduser("~"), creationflags=NO_WINDOW)
             except OSError as e:
@@ -182,6 +186,15 @@ class _Helper:
         if not ours or not self.wanted:
             return  # stopped on purpose
         # it died on its own: a crash in the capture library on this PC
+        if self.kind == "video" and "--gdi" not in self.extra:
+            # Desktop Duplication crashed here: use the simpler GDI capture from now on (no strike)
+            print(f"[mirror] the fast screen capture crashed on this PC (exit code 0x{code & 0xFFFFFFFF:08X}); "
+                  "switching to compatibility capture")
+            self.extra = ["--gdi"]
+            time.sleep(0.5)
+            if self.wanted:
+                self._start()
+            return
         now = time.time()
         self.crashes = [t for t in self.crashes if now - t < 120] + [now]
         print(f"[mirror] the {self.kind} helper stopped unexpectedly (exit code 0x{code & 0xFFFFFFFF:08X}); "
@@ -295,6 +308,15 @@ class Mirror:
 
 # ============================================================================ helper processes
 _out_lock = threading.Lock()
+_steps_done: set[str] = set()
+
+
+def _step(name: str) -> None:
+    """Note each step in PerfLink's log the first time it happens: if a native library crashes
+    the helper, the last note shows where."""
+    if name not in _steps_done:
+        _steps_done.add(name)
+        print(f"step: {name}", file=sys.stderr, flush=True)
 
 
 def _emit(kind: bytes, payload: bytes) -> None:
@@ -317,7 +339,8 @@ def _watch_parent(on_line=None) -> None:
 
 
 class _VideoHelper:
-    def __init__(self) -> None:
+    def __init__(self, gdi_only: bool = False) -> None:
+        self.gdi_only = gdi_only           # compatibility mode: GDI capture only, no Desktop Duplication
         self.want = {"monitors": [0], "width": 1280}
         self.credits = 0
         self.refresh = False
@@ -336,6 +359,16 @@ class _VideoHelper:
         self._wake.set()
 
     def list_monitors(self, refresh: bool = False) -> None:
+        if self.gdi_only:  # no dxcam: Windows' own monitor list, the main one first
+            rects = sorted(_monitor_rects(), key=lambda r: not r["primary"])
+            mons = []
+            for i, r in enumerate(rects):
+                mons.append({"index": i, "id": f"{r['x']},{r['y']}", "w": r["w"], "h": r["h"], "primary": r["primary"],
+                             "rect": r, "name": f"Monitor {i + 1}" + (" (main)" if r["primary"] else "") + f" · {r['w']}×{r['h']}"})
+            self.monitors = mons
+            _emit(b"M", json.dumps(mons).encode())
+            return
+        _step("list monitors (dxcam)")
         import dxcam  # noqa: PLC0415
         if refresh:  # monitors changed (one switched off / on): make dxcam look again
             factory = dxcam.__dict__.get("__factory")
@@ -390,12 +423,14 @@ class _VideoHelper:
           monitors then vanish from Windows) or on, everything is rebuilt for the monitors left;
         - if Desktop Duplication stops delivering while the picture is still changing (a monitor
           that's off but still listed), it switches to GDI capture (mss) until Duplication works again."""
+        _step(f"start ({'compatibility GDI capture' if self.gdi_only else 'Desktop Duplication'})")
         import numpy as np  # noqa: PLC0415
-        try:
-            import comtypes  # noqa: PLC0415
-            comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
-        except Exception:  # noqa: BLE001
-            pass
+        if not self.gdi_only:
+            try:
+                import comtypes  # noqa: PLC0415
+                comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+            except Exception:  # noqa: BLE001
+                pass
         _watch_parent(self.command)
         cams: dict[int, object] = {}
         last: dict[int, object] = {}
@@ -420,6 +455,7 @@ class _VideoHelper:
             if not r:
                 return None
             if grabber is None:
+                _step("GDI capture (mss)")
                 import mss  # noqa: PLC0415
                 grabber = mss.MSS() if hasattr(mss, "MSS") else mss.mss()
             shot = grabber.grab({"left": r["x"], "top": r["y"], "width": r["w"], "height": r["h"]})
@@ -445,13 +481,18 @@ class _VideoHelper:
                         continue
                     key, now = mon["index"], time.time()
                     frame, fresh = None, False
-                    if not gdi.get(key):
+                    if self.gdi_only:
+                        frame = gdi_grab(mon)
+                        fresh = frame is not None and not same(frame, last.get(key))
+                    elif not gdi.get(key):
                         cam = cams.get(key)
                         if cam is None:
+                            _step("create Desktop Duplication camera")
                             import dxcam  # noqa: PLC0415
                             cam = dxcam.create(device_idx=mon["device"], output_idx=mon["output"], output_color="RGB")
                             cams[key] = cam
                             last_fresh[key] = now
+                        _step("first Desktop Duplication grab")
                         frame = cam.grab()
                         fresh = frame is not None
                         if fresh:
@@ -489,7 +530,9 @@ class _VideoHelper:
                     self.credits -= 1
                     self.refresh = False
                     self._last_pointer = pointer
+                    _step("encode JPEG")
                     jpeg = self.encode(last[key], self.want["width"], mon, pointer)
+                    _step("first frame sent")
                     last_sent[key] = now
                     _emit(b"V", bytes([idx & 0xFF]) + jpeg)
                 _emit(b"E", b"")
@@ -524,6 +567,7 @@ class _VideoHelper:
 
 def _audio_helper() -> None:
     """Records what the PC plays and sends it on; follows default-device changes."""
+    _step("start sound capture")
     import pyaudiowpatch as pyaudio  # noqa: PLC0415
     _watch_parent()
     while True:
@@ -541,6 +585,7 @@ def _audio_helper() -> None:
             stream = p.open(format=pyaudio.paInt16, channels=ch, rate=rate, input=True,
                             input_device_index=dev["index"], frames_per_buffer=rate // 50, stream_callback=cb)
             stream.start_stream()
+            _step(f"sound capture running ({dev['name']})")
             name = dev["name"]
             _emit(b"E", b"")
             while stream.is_active():  # until the default output device changes
@@ -565,7 +610,9 @@ def _audio_helper() -> None:
 
 if __name__ == "__main__" and len(sys.argv) >= 3 and sys.argv[1] == "--helper":
     sys.coinit_flags = 0  # multithreaded COM, like PerfLink
+    import faulthandler
+    faulthandler.enable(sys.stderr)  # a Python-level trace in the log for crashes that allow one
     if sys.argv[2] == "video":
-        _VideoHelper().run()
+        _VideoHelper(gdi_only="--gdi" in sys.argv).run()
     elif sys.argv[2] == "audio":
         _audio_helper()
