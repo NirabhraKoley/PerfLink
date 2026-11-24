@@ -33,6 +33,15 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TRAY_MODE = "--tray" in sys.argv
+# Work from outside the install folder: every helper PerfLink starts (adb's background server,
+# PowerShell checks, PresentMon) inherits this folder, and a program running "in" a folder stops
+# Windows from renaming or deleting it, which blocked updates. All paths here are absolute.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+try:
+    os.chdir(os.path.expanduser("~"))
+except OSError:
+    pass
 
 # Background (tray) mode runs under pythonw.exe, which has no console: send output to a log file.
 if TRAY_MODE or sys.stdout is None:

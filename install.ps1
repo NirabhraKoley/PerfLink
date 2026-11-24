@@ -48,6 +48,13 @@ function Assert-SafeToReplace($dir) {
     $isEmpty = -not (Get-ChildItem $dir -Recurse -File -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
     if (-not $isPerfLink -and -not $isEmpty) { throw "Refusing to delete '$dir': it doesn't look like a PerfLink install." }
 }
+function Find-Adb {
+    $c = Get-Command adb -ErrorAction SilentlyContinue
+    if ($c) { return $c.Source }
+    $list = @("$env:LOCALAPPDATA\Microsoft\WinGet\Links\adb.exe", "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe") +
+            @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
+    foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
+}
 function Stop-Agent {
     # (not schtasks.exe: under ErrorAction Stop its "task not found" message aborted the install)
     if (Get-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue) {
@@ -63,6 +70,10 @@ function Stop-Agent {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq 'powershell.exe' -and $_.ProcessId -ne $PID -and $_.CommandLine -like "*$App\agent\*.ps1*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # ...and so does adb's background server, when an older PerfLink started it from inside the
+    # folder. Stopping it is harmless: it starts again by itself the next time it's needed.
+    $adbExe = Find-Adb
+    if ($adbExe) { try { cmd /c "`"$adbExe`" kill-server >nul 2>nul" } catch { } }
     Start-Sleep -Milliseconds 1500
 }
 
@@ -215,7 +226,8 @@ for ($try = 1; ; $try++) {
 }
 if ($pcKept) {
     Warn "Couldn't update PerfLink on this PC right now: its files are in use$(if ($pcWho) { " by $pcWho" })."
-    Warn 'The current version keeps working. Restart the PC and run the command again to update it.'
+    Warn 'The current version keeps working. Close any File Explorer or terminal window open in that folder,'
+    Warn 'or restart the PC, then run the command again to update it.'
 } else {
     Move-Item $src.FullName $App
     # marker: the uninstaller only ever deletes folders that carry it
@@ -317,13 +329,6 @@ $apkUrl = "https://github.com/$Repo/releases/latest/download/PerfLink.apk"
 # ------------------------------------------------------------------ 7. phone app (USB)
 # Done here, while PerfLink is stopped, so the installer and PerfLink never install at the same time,
 # and so the phone is updated even when the PC part couldn't be.
-function Find-Adb {
-    $c = Get-Command adb -ErrorAction SilentlyContinue
-    if ($c) { return $c.Source }
-    $list = @("$env:LOCALAPPDATA\Microsoft\WinGet\Links\adb.exe", "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe") +
-            @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
-    foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
-}
 # adb writes notes like "* daemon not running; starting now" to stderr, which Windows PowerShell 5.1
 # turns into errors under ErrorAction Stop. Run it through cmd so they never reach PowerShell.
 function Invoke-Adb([string]$argLine) { try { @(cmd /c "`"$script:adb`" $argLine 2>nul") } catch { @() } }
