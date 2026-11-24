@@ -58,7 +58,7 @@ import kotlin.math.min
 fun MirrorPage(state: UiState, vm: PerfViewModel) {
     val frame by vm.mirrorFrame.collectAsState()
     var sound by remember { mutableStateOf(vm.mirrorSound) }
-    var touch by remember { mutableStateOf(true) }
+    var touch by remember { mutableStateOf(false) }   // off by default: just watch (and swipe pages); tap the chip to control
     val haptic = LocalHapticFeedback.current
 
     // stream while this page is showing and the app is in front; stop when leaving either

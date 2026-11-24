@@ -200,19 +200,28 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
 }
 
 // =============================================================================== Dashboard
-// Page order: gaming stats first, then system info, then controls.
-// Pages loop, so Mirror (last) is one swipe left of Home, then Weather, Remote and Launcher.
-//   0 Home · 1 Performance · 2 Overlay · 3 Processes · 4 USB · 5 Bluetooth · 6 Sessions · 7 OBS · 8 Launcher
-//   · 9 Remote (mouse and keyboard) · 10 Weather · 11 Mirror (one swipe left of Home)
-private const val PAGES = 12
-private const val WEATHER_PAGE = 10
-private const val OBS_PAGE = 7
+// Page order, in one place (the page number is the position here; `-ei page N` opens page N):
+// Home, then using the PC (watch it, control it, quick actions), then gaming stats, then what's running
+// and streaming, then devices. Pages loop, so Weather (last) is one swipe left of Home and Mirror one right.
+enum class Page { Home, Mirror, Remote, Launcher, Performance, Overlay, Processes, Obs, Sessions, Bluetooth, Usb, Weather }
+
+private val PAGE_ORDER = Page.entries
+private val PAGES = PAGE_ORDER.size
 
 // Endless swiping: the pager has a huge number of slots and each slot shows page (slot % PAGES).
 // It starts in the middle, so you can swipe either way practically forever:
 // past Overlay you're back on Home, and left of Home is Overlay.
-private const val LOOP_SLOTS = 10_000 * PAGES
-private const val LOOP_START = LOOP_SLOTS / 2  // a multiple of PAGES, so slot LOOP_START is Home
+private val LOOP_SLOTS = 10_000 * PAGES
+private val LOOP_START = LOOP_SLOTS / 2  // a multiple of PAGES, so slot LOOP_START is Home
+
+/** The pager slot for page [to] nearest to [slot] (forward or back), so a jump never scrolls more than half the loop. */
+private fun nearestSlot(slot: Int, to: Page): Int {
+    val here = slot % PAGES
+    var diff = to.ordinal - here
+    if (diff > PAGES / 2) diff -= PAGES
+    if (diff < -PAGES / 2) diff += PAGES
+    return slot + diff
+}
 
 @Composable
 fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
@@ -221,7 +230,7 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
     val pageScope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 0) { slot ->
-            val page = slot % PAGES
+            val page = PAGE_ORDER[slot % PAGES]
             when {
                 state.stats == null -> Column(
                     Modifier.fillMaxSize().padding(24.dp),
@@ -238,32 +247,32 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                     Spacer(Modifier.height(14.dp))
                     Chip("Choose another PC", Palette.accent) { vm.disconnect() }
                 }
-                page == 0 -> HomePage(state, vm::media, vm::setVolume, vm::toggleMute, vm::setCity, vm::disconnect,
-                    onWeatherAuto = vm::weatherAuto,
-                    onOpenWeather = { pageScope.launch { pager.animateScrollToPage(pager.currentPage - (PAGES - WEATHER_PAGE)) } })
-                page == 1 -> StatsPage(state, compact = false, onDisconnect = vm::disconnect)
-                page == 2 -> StatsPage(state, compact = true, onDisconnect = vm::disconnect)
-                page == 3 -> ProcessesPage(state)
-                page == 4 -> UsbPage(state)
-                page == 5 -> BluetoothPage(state)
-                page == 6 -> SessionsPage(state)
-                page == OBS_PAGE -> ObsPage(state, vm)
-                page == 8 -> LauncherPage(state, vm::action)
-                page == 9 -> RemotePage(state, vm)
-                page == WEATHER_PAGE -> WeatherPage(state)
-                else -> MirrorPage(state, vm)
+                else -> when (page) {
+                    Page.Home -> HomePage(state, vm::media, vm::setVolume, vm::toggleMute, vm::setCity, vm::disconnect,
+                        onWeatherAuto = vm::weatherAuto,
+                        onOpenWeather = { pageScope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Weather)) } })
+                    Page.Mirror -> MirrorPage(state, vm)
+                    Page.Remote -> RemotePage(state, vm)
+                    Page.Launcher -> LauncherPage(state, vm::action)
+                    Page.Performance -> StatsPage(state, compact = false, onDisconnect = vm::disconnect)
+                    Page.Overlay -> StatsPage(state, compact = true, onDisconnect = vm::disconnect)
+                    Page.Processes -> ProcessesPage(state)
+                    Page.Obs -> ObsPage(state, vm)
+                    Page.Sessions -> SessionsPage(state)
+                    Page.Bluetooth -> BluetoothPage(state)
+                    Page.Usb -> UsbPage(state)
+                    Page.Weather -> WeatherPage(state)
+                }
             }
         }
         // Only ask the PC for OBS preview frames while the OBS page is showing
-        LaunchedEffect(current) { vm.obsView(current == OBS_PAGE) }
+        LaunchedEffect(current) { vm.obsView(PAGE_ORDER[current] == Page.Obs) }
         // Home button, top-right, on every page except Home itself.
         // Goes to the nearest Home slot (forward or back), so it never scrolls more than half the loop.
         if (current != 0 && state.stats != null) {
             val scope = rememberCoroutineScope()
             HomeButton(Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 8.dp)) {
-                val back = pager.currentPage - current
-                val target = if (current <= PAGES / 2) back else back + PAGES
-                scope.launch { pager.animateScrollToPage(target) }
+                scope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Home)) }
             }
         }
         // USB plug/unplug pop-up (shown on every page)

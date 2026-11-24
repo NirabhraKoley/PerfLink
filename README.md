@@ -20,17 +20,17 @@ Swipe left/right; the pages loop. A **Home** button sits top-right on every othe
 | # | Page | What it shows |
 |---|---|---|
 | `[0]` | **Home** | 12-hour clock, date, phone battery %, WhatsApp messages and calls waiting on the PC (mirrored from WhatsApp Desktop's notifications; tap to see them), weather for the PC's location (tap it for the Weather page), PC media player (cover art, seek, play/pause/skip, volume, mute) and CPU / GPU / RAM / network tiles with sparklines. Tap the PC name for settings (weather city, disconnect). |
-| `[1]` | **Performance** | FPS, frame time, 1% / 0.1% lows, stutter graph; GPU load, power, temps, clocks, VRAM; CPU per-thread load, RAM; network speed, ping, jitter, packet loss. |
-| `[2]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
-| `[3]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
-| `[4]` | **USB** | How many USB devices are plugged in (hubs counted separately), with type, port and plug-in time, plus USB drives and a plug/unplug feed. |
-| `[5]` | **Bluetooth & Wi-Fi** | Two panels. Left: how many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and the latest connect/disconnect. Right: the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
-| `[6]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
+| `[1]` | **Mirror** | One swipe right of Home. The PC's main monitor live on the phone, with the mouse pointer, at up to about 30 frames a second, over Wi-Fi or USB. The PC's sound plays on the phone's speaker (switch at the top right). **Touch control** (off by default, so you can just watch and swipe pages): turn it on with the *Touch* switch at the top right. Then tap to click there, press and hold to right-click, drag to drag, and use two fingers to scroll. For example: play a video on the PC, switch the monitor off, and keep watching and listening on the phone. It streams only while this page is open. |
+| `[2]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
+| `[3]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
+| `[4]` | **Performance** | FPS, frame time, 1% / 0.1% lows, stutter graph; GPU load, power, temps, clocks, VRAM; CPU per-thread load, RAM; network speed, ping, jitter, packet loss. |
+| `[5]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
+| `[6]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
 | `[7]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
-| `[8]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
-| `[9]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
-| `[10]` | **Weather** | Two swipes left of Home, or tap the weather on Home. Detailed weather for where the **PC** is: now (feels like, humidity, wind and gusts, UV, air quality, pressure, visibility, sunrise and sunset), the next 24 hours and 7 days. |
-| `[11]` | **Mirror** | One swipe left of Home. The PC's screen live on the phone, with the mouse pointer, at up to about 30 frames a second, over Wi-Fi or USB. The PC's sound plays on the phone's speaker (switch at the top right). A drop-down at the top right picks the monitor when the PC has several. For example: play a video on the PC, switch the monitor off with its power button, and keep watching and listening on the phone. It streams only while this page is open. |
+| `[8]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
+| `[9]` | **Bluetooth & Wi-Fi** | Two panels. Left: how many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and the latest connect/disconnect. Right: the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
+| `[10]` | **USB** | How many USB devices are plugged in (hubs counted separately), with type, port and plug-in time, plus USB drives and a plug/unplug feed. |
+| `[11]` | **Weather** | One swipe left of Home (the last page), or tap the weather on Home. Detailed weather for where the **PC** is: now (feels like, humidity, wind and gusts, UV, air quality, pressure, visibility, sunrise and sunset), the next 24 hours and 7 days. |
 
 A pop-up appears on every page when a USB device is plugged in or removed, or a Bluetooth device connects or disconnects.
 
@@ -114,7 +114,7 @@ adb shell am start -n com.perflink.app/.MainActivity -e host 127.0.0.1
 
 ### Open a specific page
 
-Add `--ei page N` (N = page index from the table above), e.g. `--ei page 3` opens Processes.
+Add `--ei page N` (N = page index from the table above), e.g. `--ei page 6` opens Processes.
 
 ## Optional setup
 
