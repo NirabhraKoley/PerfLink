@@ -83,15 +83,29 @@ fun MirrorPage(state: UiState, vm: PerfViewModel) {
                 }
             }
         }
-        // top-right, left of the Home button: monitor picker (when there are several) and sound on/off
-        Row(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = HomeButtonGap + 8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            if ((monitors?.size ?: 0) > 1) {
-                MonitorPicker(monitors!!, monitor) { i -> monitor = i; vm.mirror(true, monitor = i) }
-                Spacer(Modifier.width(8.dp))
+        // top-right, left of the Home button: monitor picker (when there are several, including any
+        // switched off) and sound on/off
+        val on = monitors.orEmpty().filter { !it.off }
+        val off = monitors.orEmpty().filter { it.off }
+        Column(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = HomeButtonGap + 8.dp),
+            horizontalAlignment = Alignment.End) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if ((monitors?.size ?: 0) > 1) {
+                    MonitorPicker(monitors!!, monitor) { i -> monitor = i; vm.mirror(true, monitor = i) }
+                    Spacer(Modifier.width(8.dp))
+                }
+                OverlayChip(if (sound) "🔊 Sound on phone" else "🔇 Sound off", active = sound) {
+                    sound = !sound; vm.mirror(true, sound = sound)
+                }
             }
-            OverlayChip(if (sound) "🔊 Sound on phone" else "🔇 Sound off", active = sound) {
-                sound = !sound; vm.mirror(true, sound = sound)
+            // a monitor switched off with its power button that Windows dropped: say where its windows went
+            if (off.isNotEmpty() && on.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("${off.joinToString { it.name.substringBefore(" · switched off") }} is switched off — Windows moved its " +
+                    "windows to ${on.first().name.substringBefore(" ·")}, shown here",
+                    color = Palette.text, fontSize = 11.sp, maxLines = 2,
+                    modifier = Modifier.width(300.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xB3141A22))
+                        .padding(horizontal = 10.dp, vertical = 6.dp))
             }
         }
     }
@@ -100,14 +114,21 @@ fun MirrorPage(state: UiState, vm: PerfViewModel) {
 @Composable
 private fun MonitorPicker(monitors: List<Monitor>, selected: Int, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val current = monitors.firstOrNull { it.index == selected } ?: monitors.first()
+    val current = monitors.firstOrNull { it.index == selected && !it.off } ?: monitors.firstOrNull { !it.off } ?: monitors.first()
     Box {
         OverlayChip("🖥 ${current.name}  ▾", active = true) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false },
             modifier = Modifier.background(Palette.card)) {
             monitors.forEach { m ->
                 DropdownMenuItem(
-                    text = { Text(m.name, color = if (m.index == selected) Palette.accent else Palette.text, fontSize = 13.sp) },
+                    text = {
+                        Text(m.name, fontSize = 13.sp, color = when {
+                            m.off -> Palette.dim
+                            m.index == current.index -> Palette.accent
+                            else -> Palette.text
+                        })
+                    },
+                    enabled = !m.off,   // a switched-off monitor isn't there to show
                     onClick = { open = false; onPick(m.index) },
                 )
             }

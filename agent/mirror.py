@@ -77,6 +77,7 @@ class Mirror:
         self.loop: asyncio.AbstractEventLoop | None = None
         self.viewers: dict = {}  # ws -> Viewer
         self.monitors: list[dict] = []
+        self._seen: dict[str, dict] = {}   # every monitor seen since PerfLink started, by Windows name
         self.audio_format: dict | None = None
         self.error: str | None = None
         self._wake = threading.Event()
@@ -111,7 +112,12 @@ class Mirror:
         self.viewers.pop(ws, None)
 
     def snapshot(self) -> dict:
-        return {"monitors": self.monitors, "error": self.error, "streaming": len(self.viewers)}
+        # monitors that were there but aren't now (switched off: Windows dropped them) are listed too,
+        # so the phone can say so instead of the monitor silently vanishing from the list
+        on = {m["id"] for m in self.monitors if m.get("id")}
+        off = [{"index": -1, "off": True, "name": f"{v['label']} · switched off", "id": k, "w": v["w"], "h": v["h"],
+                "primary": False} for k, v in sorted(self._seen.items(), key=lambda kv: kv[1]["num"]) if k not in on]
+        return {"monitors": self.monitors + off, "error": self.error, "streaming": len(self.viewers)}
 
     # ------------------------------------------------------------------ video
     def _list_monitors(self, refresh: bool = False) -> None:
@@ -136,11 +142,28 @@ class Mirror:
             except (IndexError, ValueError):
                 continue
             mons.append({"index": len(mons), "device": dev, "output": out, "w": w, "h": h, "primary": primary})
-        mons.sort(key=lambda m: (not m["primary"], m["index"]))  # the main monitor first
+        # Windows' own name for each monitor (\\.\DISPLAY1…) stays the same when others come and go,
+        # so numbers and names stay put; the model name when Windows knows it (not "Generic PnP Monitor")
+        factory = dxcam.__dict__.get("__factory")
+        for m in mons:
+            try:
+                out = factory.outputs[m["device"]][m["output"]]
+                m["id"] = out.devicename
+                meta = factory.output_metadata.get(out.devicename) or []
+                model = meta[2][0][1] if len(meta) > 2 and meta[2] else ""
+                m["model"] = "" if "generic" in model.lower() else model.replace("(Analog)", "").replace("(Digital)", "").strip()
+            except Exception:  # noqa: BLE001
+                m["id"], m["model"] = f"{m['device']}:{m['output']}", ""
+        for m in sorted(mons, key=lambda m: m["id"]):
+            if m["id"] not in self._seen:
+                self._seen[m["id"]] = {"num": len(self._seen) + 1}
+        mons.sort(key=lambda m: (not m["primary"], self._seen[m["id"]]["num"]))  # the main monitor first
         used = set()
         for i, m in enumerate(mons):
             m["index"] = i
-            m["name"] = f"Monitor {i + 1}" + (" (main)" if m["primary"] else "") + f" · {m['w']}×{m['h']}"
+            label = f"Monitor {self._seen[m['id']]['num']}" + (f" · {m['model']}" if m["model"] else "")
+            self._seen[m["id"]].update(label=label, w=m["w"], h=m["h"])
+            m["name"] = label + (" (main)" if m["primary"] else "") + f" · {m['w']}×{m['h']}"
             # where it sits on the desktop (for the pointer, and for the GDI fallback)
             r = next((k for k, r in enumerate(rects) if k not in used and r["w"] == m["w"] and r["h"] == m["h"]
                       and r["primary"] == m["primary"]), None)
