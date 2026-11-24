@@ -19,7 +19,7 @@ Swipe left/right; the pages loop. A **Home** button sits top-right on every othe
 
 | # | Page | What it shows |
 |---|---|---|
-| `[0]` | **Home** | 12-hour clock, date, phone battery %, weather, PC media player (cover art, seek, play/pause/skip, volume, mute) and CPU / GPU / RAM / network tiles with sparklines. Tap the PC name for settings (weather city, disconnect). |
+| `[0]` | **Home** | 12-hour clock, date, phone battery %, WhatsApp messages and calls waiting on the PC (mirrored from WhatsApp Desktop's notifications; tap to see them), weather, PC media player (cover art, seek, play/pause/skip, volume, mute) and CPU / GPU / RAM / network tiles with sparklines. Tap the PC name for settings (weather city, disconnect). |
 | `[1]` | **Performance** | FPS, frame time, 1% / 0.1% lows, stutter graph; GPU load, power, temps, clocks, VRAM; CPU per-thread load, RAM; network speed, ping, jitter, packet loss. |
 | `[2]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
 | `[3]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
@@ -115,6 +115,7 @@ Add `--ei page N` (N = page index from the table above), e.g. `--ei page 3` open
 
 ## Optional setup
 
+- **WhatsApp:** open WhatsApp Desktop on the PC with its Windows notifications turned on. The Home page then counts the messages and calls still in the PC's notification center. They clear when you dismiss them on the PC or open the chat.
 - **Weather city:** tap the PC name on the Home page, or start the agent with `--city "London"`. Weather data comes from [Open-Meteo](https://open-meteo.com/).
 - **OBS page:** in OBS open *Tools → WebSocket Server Settings* and tick *Enable WebSocket server*. The agent reads the password from OBS's own config, so there's nothing to type.
 - **GitHub panel:** install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`.

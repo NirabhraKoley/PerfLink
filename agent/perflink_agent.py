@@ -58,6 +58,7 @@ from obs_control import Obs, open_obs
 from processes import Processes
 from bluetooth import BluetoothDevices
 from wifi import WifiStatus
+from whatsapp import WhatsAppNotifications
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
 from extras import Media, Volume, Weather, load_config, save_config
@@ -66,7 +67,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.3"
+VERSION = "1.4"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -378,6 +379,7 @@ class Agent:
         self.usb = UsbDevices()  # after Sensors: reuses its pythonnet setup
         self.bluetooth = BluetoothDevices()
         self.wifi = WifiStatus()
+        self.whatsapp = WhatsAppNotifications()
         self.obs_viewers: set = set()  # phones currently showing the OBS page (get previews)
         self._last_preview: str | None = None
 
@@ -443,6 +445,7 @@ class Agent:
         snap["usb"] = self.usb.snapshot()
         snap["bluetooth"] = self.bluetooth.snapshot()
         snap["wifi"] = self.wifi.snapshot()
+        snap["whatsapp"] = self.whatsapp.snapshot()
         return snap
 
     async def push(self) -> None:

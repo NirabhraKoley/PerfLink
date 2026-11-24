@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -114,43 +118,173 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onHostClick
     val ampm = if (now.hour < 12) "AM" else "PM"
     val date = now.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault()))
 
-    BoxWithConstraints(modifier) {
-        val density = LocalDensity.current
-        // Scale the clock to the space available (narrow 5" phones → large tablets)
-        val clockSp = with(density) { minOf(maxHeight * 0.44f, maxWidth / 2.75f).toSp() }
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onHostClick() }.padding(vertical = 2.dp),
-                ) {
-                    val dot = if (state.conn == Conn.Connected) Palette.good else Palette.warn
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
-                    Spacer(Modifier.width(6.dp))
-                    Text(s.host ?: "", color = Palette.dim, fontSize = 11.sp, letterSpacing = 0.5.sp, maxLines = 1)
-                }
-                // This phone's battery (the app hides the phone's status bar)
-                phoneBattery()?.let { (pct, charging) ->
-                    Spacer(Modifier.width(12.dp))
-                    BatteryChip("Phone", pct, charging, null)
-                }
+    var waOpen by remember { mutableStateOf(false) }
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onHostClick() }.padding(vertical = 2.dp),
+            ) {
+                val dot = if (state.conn == Conn.Connected) Palette.good else Palette.warn
+                Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
+                Spacer(Modifier.width(6.dp))
+                Text(s.host ?: "", color = Palette.dim, fontSize = 11.sp, letterSpacing = 0.5.sp, maxLines = 1)
             }
-            Row(verticalAlignment = Alignment.Top) {
-                Text("$hour12", color = HomeColors.clock, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
-                Text(":", color = HomeColors.colon, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
-                Text(String.format(Locale.US, "%02d", now.minute), color = HomeColors.clock, fontSize = clockSp,
-                    fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.padding(top = with(density) { (clockSp * 0.22f).toDp() })) {
-                    Text(String.format(Locale.US, "%02d", now.second), color = HomeColors.colon,
-                        fontSize = clockSp * 0.2f, fontWeight = FontWeight.Light)
-                    Text(ampm, color = Palette.dim, fontSize = clockSp * 0.17f, fontWeight = FontWeight.Medium)
-                }
+            // This phone's battery (the app hides the phone's status bar)
+            phoneBattery()?.let { (pct, charging) ->
+                Spacer(Modifier.width(12.dp))
+                BatteryChip("Phone", pct, charging, null)
             }
-            Text(date, color = Palette.text, fontSize = 16.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.height(10.dp))
-            s.weather?.takeIf { it.tempC != null }?.let { w -> WeatherRow(w) }
         }
+        // WhatsApp messages from WhatsApp Desktop on the PC
+        s.whatsapp?.let { wa ->
+            Spacer(Modifier.height(6.dp))
+            WhatsAppCard(wa) { waOpen = true }
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val density = LocalDensity.current
+            // Scale the clock to the space left (date + weather take ~80dp below it)
+            val clockSp = with(density) {
+                minOf((maxHeight - 80.dp) * 0.92f, maxWidth / 3.4f).coerceAtLeast(30.dp).toSp()
+            }
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("$hour12", color = HomeColors.clock, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
+                    Text(":", color = HomeColors.colon, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
+                    Text(String.format(Locale.US, "%02d", now.minute), color = HomeColors.clock, fontSize = clockSp,
+                        fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.padding(top = with(density) { (clockSp * 0.22f).toDp() })) {
+                        Text(String.format(Locale.US, "%02d", now.second), color = HomeColors.colon,
+                            fontSize = clockSp * 0.2f, fontWeight = FontWeight.Light)
+                        Text(ampm, color = Palette.dim, fontSize = clockSp * 0.17f, fontWeight = FontWeight.Medium)
+                    }
+                }
+                Text(date, color = Palette.text, fontSize = 15.sp, fontWeight = FontWeight.Light)
+                Spacer(Modifier.height(8.dp))
+                s.weather?.takeIf { it.tempC != null }?.let { w -> WeatherRow(w) }
+            }
+        }
+    }
+    if (waOpen) s.whatsapp?.let { WhatsAppDialog(it) { waOpen = false } }
+}
+
+// ------------------------------------------------------------------ WhatsApp (mirrored from WhatsApp Desktop)
+private val WaGreen = Color(0xFF25D366)
+
+/** One compact row: WhatsApp mark, then the number of messages and of calls waiting on the PC. */
+@Composable
+private fun WhatsAppCard(wa: WhatsApp, onOpen: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = wa.notes.isNotEmpty()) { onOpen() }
+            .padding(vertical = 2.dp),
+    ) {
+        WaGlyph(30.dp)
+        Spacer(Modifier.width(12.dp))
+        if (!wa.installed || (!wa.running && wa.notes.isEmpty())) {
+            Text(if (!wa.installed) "WhatsApp Desktop isn't set up on the PC" else "WhatsApp isn't open on the PC",
+                color = Palette.dim, fontSize = 12.sp, maxLines = 1)
+        } else {
+            WaCount(wa.messages, if (wa.messages == 1) "message" else "messages") { c -> drawMessageIcon(c) }
+            Spacer(Modifier.width(16.dp))
+            WaCount(wa.calls, if (wa.calls == 1) "call" else "calls") { c -> drawCallIcon(c) }
+        }
+    }
+}
+
+@Composable
+private fun WaCount(n: Int, label: String, icon: DrawScope.(Color) -> Unit) {
+    val active = n > 0
+    val tint = if (active) Palette.text else Palette.dim
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))
+                .background(if (active) WaGreen.copy(alpha = 0.22f) else Color(0x14FFFFFF)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(16.dp)) { icon(if (active) WaGreen else Palette.dim) }
+        }
+        Spacer(Modifier.width(7.dp))
+        Text("$n", color = tint, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = Palette.dim, fontSize = 12.sp)
+    }
+}
+
+/** Speech bubble with two text lines. */
+private fun DrawScope.drawMessageIcon(c: Color) {
+    val w = size.width; val h = size.height
+    drawRoundRect(c, topLeft = Offset(0f, 0f), size = Size(w, h * 0.78f), cornerRadius = CornerRadius(w * 0.22f))
+    val tail = Path().apply { moveTo(w * 0.22f, h * 0.7f); lineTo(w * 0.2f, h); lineTo(w * 0.48f, h * 0.7f); close() }
+    drawPath(tail, c)
+    val bg = Color(0xFF10181B)
+    drawRoundRect(bg, Offset(w * 0.22f, h * 0.24f), Size(w * 0.56f, h * 0.1f), CornerRadius(h * 0.05f))
+    drawRoundRect(bg, Offset(w * 0.22f, h * 0.44f), Size(w * 0.38f, h * 0.1f), CornerRadius(h * 0.05f))
+}
+
+/** Phone handset. */
+private fun DrawScope.drawCallIcon(c: Color) {
+    val w = size.width; val h = size.height
+    val s = Stroke(width = w * 0.2f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+    drawArc(c, startAngle = 100f, sweepAngle = 160f, useCenter = false,
+        topLeft = Offset(w * 0.12f, h * 0.12f), size = Size(w * 0.8f, h * 0.8f), style = s)
+    drawCircle(c, radius = w * 0.17f, center = Offset(w * 0.3f, h * 0.2f))
+    drawCircle(c, radius = w * 0.17f, center = Offset(w * 0.8f, h * 0.72f))
+}
+
+@Composable
+private fun WaLine(n: WaNote, modifier: Modifier = Modifier, lines: Int = 1) {
+    Column(modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(n.title, color = Palette.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            n.t?.let { Text(ago(System.currentTimeMillis() / 1000.0 - it), color = Palette.dim, fontSize = 10.sp) }
+        }
+        if (n.text.isNotBlank()) {
+            Text(n.text, color = Palette.dim, fontSize = 12.sp, maxLines = lines, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun WhatsAppDialog(wa: WhatsApp, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF12191C),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WaGlyph(18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("WhatsApp · ${wa.notes.size} new", color = Palette.text, fontSize = 16.sp)
+            }
+        },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 260.dp)) {
+                items(wa.notes, key = { it.id }) { n -> WaLine(n, Modifier.padding(vertical = 5.dp), lines = 3) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = WaGreen) } },
+    )
+}
+
+/** Small WhatsApp-style mark: a green speech bubble with a phone handset. */
+@Composable
+private fun WaGlyph(size: Dp) {
+    Canvas(Modifier.size(size)) {
+        val r = this.size.minDimension / 2f
+        val c = Offset(r, r)
+        drawCircle(WaGreen, radius = r * 0.92f, center = c)
+        val tail = Path().apply {
+            moveTo(r * 0.28f, r * 1.45f); lineTo(r * 0.05f, r * 1.98f); lineTo(r * 0.72f, r * 1.78f); close()
+        }
+        drawPath(tail, WaGreen)
+        drawCircle(Color(0xFF0B1A12), radius = r * 0.62f, center = c)
+        // handset: two ear pieces joined by an arc
+        drawArc(WaGreen, startAngle = 100f, sweepAngle = 160f, useCenter = false,
+            topLeft = Offset(r * 0.62f, r * 0.62f), size = Size(r * 0.76f, r * 0.76f), style = Stroke(width = r * 0.2f))
+        drawCircle(WaGreen, radius = r * 0.13f, center = Offset(r * 0.78f, r * 0.72f))
+        drawCircle(WaGreen, radius = r * 0.13f, center = Offset(r * 1.28f, r * 1.26f))
     }
 }
 

@@ -156,6 +156,20 @@ private fun parseBt(o: JSONObject) = BtState(
     error = o.s("error"),
 )
 
+data class WaNote(val id: String, val title: String, val text: String, val t: Double?)
+data class WhatsApp(val installed: Boolean, val running: Boolean, val notes: List<WaNote>,
+                    val messages: Int, val calls: Int)
+
+private fun parseWhatsApp(o: JSONObject) = WhatsApp(
+    installed = o.optBoolean("installed"),
+    running = o.optBoolean("running"),
+    notes = o.optJSONArray("notifications").mapObj { n ->
+        WaNote(n.optString("id"), n.optString("title"), n.optString("text"), n.d("t"))
+    },
+    messages = o.optInt("messages"),
+    calls = o.optInt("calls"),
+)
+
 data class ProcList(val apps: List<ProcApp>, val totalProcesses: Int, val totalApps: Int)
 
 data class AiStatus(val apps: List<AiApp>, val sessions: List<AiSession>, val github: GitHub?)
@@ -171,6 +185,7 @@ data class Stats(
     val usb: UsbState? = null,
     val bluetooth: BtState? = null,
     val wifi: WifiState? = null,
+    val whatsapp: WhatsApp? = null,
 )
 
 private fun parseProcs(p: JSONObject) = ProcList(
@@ -251,6 +266,7 @@ fun parseStats(text: String): Stats? = try {
             usb = o.optJSONObject("usb")?.let { parseUsb(it) },
             bluetooth = o.optJSONObject("bluetooth")?.let { parseBt(it) },
             wifi = o.optJSONObject("wifi")?.let { parseWifi(it) },
+            whatsapp = o.optJSONObject("whatsapp")?.let { parseWhatsApp(it) },
         )
     }
 } catch (e: Exception) {
