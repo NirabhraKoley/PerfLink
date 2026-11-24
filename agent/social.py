@@ -88,6 +88,17 @@ def _window_titles() -> list[str]:
     return titles
 
 
+def _attribute_values(payload) -> str:
+    """Every attribute value in a notification's XML (links, image addresses, action arguments)."""
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8", errors="replace")
+    try:
+        import xml.etree.ElementTree as ET
+        return " ".join(v for el in ET.fromstring(payload).iter() for v in el.attrib.values())
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _site_app(*texts: str) -> str | None:
     blob = " ".join(texts).lower()
     for site, key in SITES.items():
@@ -148,7 +159,10 @@ def read_all(db_path: str = DB) -> tuple[set[str], dict[str, list[dict]]]:
         if not t:
             continue
         if key == "@browser":  # a web app's notification: which website sent it?
-            key = _site_app(t.get("attribution", ""), t.get("launch", ""), t["title"])
+            # Edge says so in the attribution line; Firefox and Chrome in the notification's links
+            # and images (launch / action / image addresses). Message text isn't used, so a mail
+            # that mentions instagram.com isn't mistaken for Instagram.
+            key = _site_app(t.get("attribution", ""), t.get("launch", ""), _attribute_values(payload))
             if not key:
                 continue
         if len(out.get(key, [])) >= MAX_PER_APP:
