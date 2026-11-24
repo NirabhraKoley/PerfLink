@@ -1,17 +1,24 @@
 """
 WhatsApp notifications for the PerfLink Home page, mirrored from WhatsApp Desktop on the PC.
 
-WhatsApp Desktop shows each new message as a Windows notification. Windows keeps the ones
+WhatsApp Desktop shows each new message as a Windows notification, and a call as one while it rings. Windows keeps the ones
 still in the notification center (Action Center) in its notification database,
 %LOCALAPPDATA%\\Microsoft\\Windows\\Notifications\\wpndatabase.db. This reads it (read-only)
 every few seconds, so the phone shows the same messages as the PC: a message appears when
 WhatsApp notifies, and goes away when it's dismissed on the PC or WhatsApp clears it
 (for example, when the chat is opened).
 
+Calls: WhatsApp removes a call's notification as soon as the call ends, so the notification list
+alone never shows missed calls. PerfLink checks every 2 seconds, remembers each call it sees
+ringing, and keeps counting it until WhatsApp is next opened on the PC (like WhatsApp's own Calls
+badge, which clears once you look at it). Remembered calls survive a PerfLink restart.
+
 Nothing is sent anywhere except to the phones connected to PerfLink.
 """
 from __future__ import annotations
 
+import ctypes
+import json
 import os
 import re
 import sqlite3
@@ -23,6 +30,7 @@ import psutil
 
 DB = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Notifications", "wpndatabase.db")
 MAX_ITEMS = 20
+CALLS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "whatsapp_calls.json")
 _FILETIME_EPOCH = 11644473600  # seconds between 1601-01-01 and 1970-01-01
 
 
@@ -51,17 +59,22 @@ def parse_toast(payload) -> dict | None:
         return None
     title = texts[0]
     text = " ".join(texts[1:]) if len(texts) > 1 else ""
-    return {"title": title, "text": re.sub(r"\s+", " ", text)}
+    actions = [(a.get("content") or "").strip() for a in root.iter("action")]
+    return {"title": title, "text": re.sub(r"\s+", " ", text), "scenario": root.get("scenario") or "",
+            "actions": [a for a in actions if a]}
 
 
 _CALL = re.compile(r"\b(voice|video|missed|incoming|outgoing)\s+(group\s+)?call\b|\bcalling\b|\bmissed call", re.I)
+_CALL_BUTTONS = re.compile(r"^(accept|answer|decline|reject|ignore)\b", re.I)
 _MANY = re.compile(r"\b(\d+)\s+(new\s+)?messages\b", re.I)
 
 
-def classify(title: str, text: str) -> tuple[str, int]:
-    """('call' | 'message', how many). WhatsApp sums several messages up as 'N new messages'."""
+def classify(title: str, text: str, scenario: str = "", actions: list[str] | None = None) -> tuple[str, int]:
+    """('call' | 'message', how many). A ringing call is an 'incomingCall' notification with
+    Accept/Decline buttons. WhatsApp sums several messages up as 'N new messages'."""
     both = f"{title} {text}"
-    if _CALL.search(both):
+    if scenario.lower() == "incomingcall" or any(_CALL_BUTTONS.match(a) for a in actions or []) \
+            or _CALL.search(both):
         return "call", 1
     m = _MANY.search(both)
     return "message", int(m.group(1)) if m else 1
@@ -85,7 +98,7 @@ def read_notifications(db_path: str = DB) -> tuple[bool, list[dict]]:
     for nid, payload, arrival in rows:
         t = parse_toast(payload)
         if t:
-            kind, count = classify(t["title"], t["text"])
+            kind, count = classify(t["title"], t["text"], t["scenario"], t["actions"])
             items.append({"id": str(nid), "title": t["title"], "text": t["text"], "t": _filetime_to_unix(arrival),
                           "kind": kind, "count": count})
         if len(items) >= MAX_ITEMS:
@@ -100,13 +113,59 @@ def _whatsapp_running() -> bool:
     return False
 
 
+def _whatsapp_in_front() -> bool:
+    """Is a WhatsApp window the one in front (the user is looking at WhatsApp)?"""
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return "whatsapp" in psutil.Process(pid.value).name().lower()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class WhatsAppNotifications:
-    def __init__(self, interval: float = 3.0) -> None:
+    def __init__(self, interval: float = 2.0) -> None:
         self.interval = interval
         self.state: dict = {"installed": False, "running": False, "notifications": [], "messages": 0, "calls": 0,
                             "error": None}
         self._lock = threading.Lock()
+        self._calls: dict[str, dict] = self._load_calls()  # calls seen ringing, until WhatsApp is opened
         threading.Thread(target=self._loop, daemon=True).start()
+
+    @staticmethod
+    def _load_calls() -> dict:
+        try:
+            with open(CALLS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            return {k: v for k, v in data.items() if isinstance(v, dict)}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_calls(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(CALLS_FILE), exist_ok=True)
+            with open(CALLS_FILE + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(self._calls, f)
+            os.replace(CALLS_FILE + ".tmp", CALLS_FILE)
+        except OSError:
+            pass
+
+    def _track_calls(self, items: list[dict], in_front: bool) -> None:
+        changed = False
+        if in_front and self._calls:   # the user opened WhatsApp on the PC: calls have been seen
+            self._calls.clear()
+            changed = True
+        for i in items:
+            if i["kind"] == "call" and i["id"] not in self._calls and not in_front:
+                self._calls[i["id"]] = {"id": "call-" + i["id"], "title": i["title"],
+                                        "text": i["text"] or "Call", "t": i["t"] or time.time()}
+                changed = True
+        if changed:
+            self._save_calls()
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -120,10 +179,15 @@ class WhatsAppNotifications:
                 if n % 5 == 0:  # the process list is slower: check it every ~15 s
                     running = _whatsapp_running()
                 installed, items = read_notifications()
+                self._track_calls(items, _whatsapp_in_front())
+                messages = [i for i in items if i["kind"] == "message"]
+                calls = sorted(self._calls.values(), key=lambda c: c.get("t") or 0, reverse=True)
+                shown = sorted(messages + [{**c, "kind": "call", "count": 1} for c in calls],
+                               key=lambda i: i.get("t") or 0, reverse=True)[:MAX_ITEMS]
                 with self._lock:
-                    self.state = {"installed": installed, "running": running, "notifications": items,
-                                  "messages": sum(i["count"] for i in items if i["kind"] == "message"),
-                                  "calls": sum(i["count"] for i in items if i["kind"] == "call"),
+                    self.state = {"installed": installed, "running": running, "notifications": shown,
+                                  "messages": sum(i["count"] for i in messages),
+                                  "calls": len(calls),
                                   "error": None}
             except Exception as e:  # noqa: BLE001  (database busy for a moment, etc.)
                 with self._lock:
