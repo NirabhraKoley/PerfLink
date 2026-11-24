@@ -201,9 +201,10 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
 
 // =============================================================================== Dashboard
 // Page order: gaming stats first, then system info, then controls.
-// Pages loop, so Launcher (last) is one swipe left of Home for quick actions.
+// Pages loop, so Remote (last) is one swipe left of Home, with Launcher next to it.
 //   0 Home · 1 Performance · 2 Overlay · 3 Processes · 4 USB · 5 Bluetooth · 6 Sessions · 7 OBS · 8 Launcher
-private const val PAGES = 9
+//   · 9 Remote (mouse and keyboard)
+private const val PAGES = 10
 private const val OBS_PAGE = 7
 
 // Endless swiping: the pager has a huge number of slots and each slot shows page (slot % PAGES).
@@ -243,7 +244,8 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 page == 5 -> BluetoothPage(state)
                 page == 6 -> SessionsPage(state)
                 page == OBS_PAGE -> ObsPage(state, vm)
-                else -> LauncherPage(state, vm::action)
+                page == 8 -> LauncherPage(state, vm::action)
+                else -> RemotePage(state, vm)
             }
         }
         // Only ask the PC for OBS preview frames while the OBS page is showing

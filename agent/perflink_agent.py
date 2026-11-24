@@ -68,6 +68,7 @@ from processes import Processes
 from bluetooth import BluetoothDevices
 from wifi import WifiStatus
 from whatsapp import WhatsAppNotifications
+import remote_input
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
 from extras import Media, Volume, Weather, load_config, save_config
@@ -76,7 +77,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.4"
+VERSION = "1.5"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -515,6 +516,9 @@ class Agent:
                     continue  # the agent takes no binary messages
                 try:
                     msg = json.loads(raw)
+                    if msg.get("cmd") == "input":  # Remote page: touchpad + keyboard (fast path, no reply)
+                        remote_input.handle(msg)
+                        continue
                     if msg.get("cmd") == "obs_view":
                         (self.obs_viewers.add if msg.get("on") else self.obs_viewers.discard)(ws)
                         self.obs.preview_wanted = bool(self.obs_viewers)

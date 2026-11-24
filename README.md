@@ -28,6 +28,7 @@ Swipe left/right; the pages loop. A **Home** button sits top-right on every othe
 | `[6]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
 | `[7]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
 | `[8]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
+| `[9]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
 
 A pop-up appears on every page when a USB device is plugged in or removed, or a Bluetooth device connects or disconnects.
 

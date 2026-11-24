@@ -306,6 +306,10 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         socket?.send(o.toString())
     }
 
+    /** Remote page: mouse / keyboard input for the PC ("move", "click", "button", "scroll", "text", "key"). */
+    fun input(type: String, build: JSONObject.() -> Unit = {}) =
+        send(JSONObject().put("cmd", "input").put("type", type).apply(build))
+
     fun media(action: String, value: Double? = null) =
         send(JSONObject().put("cmd", "media").put("action", action).apply { value?.let { put("value", it) } })
 
