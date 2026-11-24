@@ -69,7 +69,6 @@ from bluetooth import BluetoothDevices
 from wifi import WifiStatus
 from whatsapp import WhatsAppNotifications
 import remote_input
-from social import SocialApps
 from mirror import Mirror
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
@@ -80,7 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.9"
+VERSION = "1.10"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -395,7 +394,6 @@ class Agent:
         self.bluetooth = BluetoothDevices()
         self.wifi = WifiStatus()
         self.whatsapp = WhatsAppNotifications()
-        self.social = SocialApps(self.whatsapp)
         self.mirror = Mirror()  # screen + sound to the phone's Mirror page (idle until asked)
         self.obs_viewers: set = set()  # phones currently showing the OBS page (get previews)
         self._last_preview: str | None = None
@@ -469,7 +467,6 @@ class Agent:
         snap["bluetooth"] = self.bluetooth.snapshot()
         snap["wifi"] = self.wifi.snapshot()
         snap["whatsapp"] = self.whatsapp.snapshot()
-        snap["social"] = self.social.snapshot()
         snap["mirror"] = self.mirror.snapshot()
         return snap
 
@@ -535,6 +532,11 @@ class Agent:
                         self.mirror.command(ws, msg)
                         continue
                     if msg.get("cmd") == "input":  # Remote page: touchpad + keyboard (fast path, no reply)
+                        if msg.get("type") in ("tap", "drag"):  # a touch on the Mirror page's picture
+                            pos = self.mirror.to_desktop(msg.get("x", 0), msg.get("y", 0))
+                            if pos is None:
+                                continue
+                            msg = {**msg, "px": pos[0], "py": pos[1]}
                         remote_input.handle(msg)
                         continue
                     if msg.get("cmd") == "obs_view":

@@ -12,6 +12,9 @@ Commands (JSON from the phone, "cmd": "input"):
   {"type": "scroll", "dy": 120, "dx": 0}               wheel units: 120 = one notch, + = up / right
   {"type": "text",   "text": "Hello"}                  type text (any language, symbols, emoji)
   {"type": "key",    "key": "enter", "mods": ["ctrl"]} press a key, optionally with ctrl/alt/shift/win
+Mirror page (a touch on the PC's picture; the agent adds the matching desktop position px, py):
+  {"type": "tap",    "x": 0.5, "y": 0.3, "button": "left"|"right"}   click at that spot
+  {"type": "drag",   "x": 0.5, "y": 0.3, "phase": "start"|"move"|"end"}  press, move, release there
 """
 from __future__ import annotations
 
@@ -96,6 +99,11 @@ _BUTTONS = {"left": (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
             "middle": (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP)}
 
 
+def move_to(px: int, py: int) -> None:
+    """Put the pointer at a desktop position (pixels; monitors left of / above the main one are negative)."""
+    user32.SetCursorPos(int(px), int(py))
+
+
 def move(dx: float, dy: float) -> None:
     dx, dy = int(round(dx)), int(round(dy))
     if dx or dy:
@@ -174,3 +182,11 @@ def handle(msg: dict) -> None:
         type_text(str(msg.get("text", ""))[:2000])
     elif t == "key":
         key(str(msg.get("key", "")), [str(m) for m in msg.get("mods") or []])
+    elif t in ("tap", "drag") and "px" in msg:
+        move_to(msg["px"], msg["py"])
+        if t == "tap":
+            click(str(msg.get("button", "left")))
+        elif msg.get("phase") == "start":
+            press("left", True)
+        elif msg.get("phase") == "end":
+            press("left", False)

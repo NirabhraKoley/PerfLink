@@ -108,6 +108,16 @@ class Mirror:
             self.viewers[ws] = v
         self._wake.set()
 
+    def to_desktop(self, x: float, y: float) -> tuple[int, int] | None:
+        """A spot on the phone's picture (0..1 across and down) -> desktop pixels on the monitor shown
+        (the main monitor)."""
+        mon = (self.monitors or [None])[0]
+        r = (mon or {}).get("rect") or next((r for r in _monitor_rects() if r["primary"]), None)
+        if not r:
+            return None
+        x, y = min(max(float(x), 0.0), 0.9999), min(max(float(y), 0.0), 0.9999)
+        return r["x"] + int(x * r["w"]), r["y"] + int(y * r["h"])
+
     def drop(self, ws) -> None:
         self.viewers.pop(ws, None)
 

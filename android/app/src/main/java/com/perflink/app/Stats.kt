@@ -192,15 +192,9 @@ private fun parseBt(o: JSONObject) = BtState(
 )
 
 data class WaNote(val id: String, val title: String, val text: String, val t: Double?, val kind: String = "message")
-data class SocialApp(val key: String, val name: String, val messages: Int, val calls: Int, val notes: List<WaNote>)
 
 private fun parseNote(n: JSONObject) =
     WaNote(n.optString("id"), n.optString("title"), n.optString("text"), n.d("t"), n.optString("kind", "message"))
-
-private fun parseSocial(o: JSONObject) = o.optJSONArray("apps").mapObj { a ->
-    SocialApp(a.optString("key"), a.optString("name"), a.optInt("messages"), a.optInt("calls"),
-        a.optJSONArray("notifications").mapObj { parseNote(it) })
-}
 data class WhatsApp(val installed: Boolean, val running: Boolean, val notes: List<WaNote>,
                     val messages: Int, val calls: Int)
 
@@ -229,7 +223,6 @@ data class Stats(
     val wifi: WifiState? = null,
     val whatsapp: WhatsApp? = null,
     val weatherDetail: WeatherDetail? = null,
-    val social: List<SocialApp>? = null,
     val monitors: List<Monitor>? = null,
 )
 
@@ -303,7 +296,6 @@ fun parseStats(text: String): Stats? = try {
             volume = o.optJSONObject("volume")?.let { v -> Volume(v.d("level"), v.optBoolean("muted")) },
             weather = o.optJSONObject("weather")?.let { parseWeather(it) },
             weatherDetail = o.optJSONObject("weather_detail")?.let { parseWeatherDetail(it) },
-            social = o.optJSONObject("social")?.let { parseSocial(it) },
             monitors = o.optJSONObject("mirror")?.optJSONArray("monitors").mapObj { m ->
                 Monitor(m.optInt("index"), m.optString("name"), m.optInt("w"), m.optInt("h"), m.optBoolean("primary"),
                     m.optBoolean("off"))
