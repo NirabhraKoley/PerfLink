@@ -38,6 +38,41 @@ data class Volume(val level: Double?, val muted: Boolean)
 data class Weather(
     val city: String?, val tempC: Double?, val feelsC: Double?, val highC: Double?,
     val lowC: Double?, val code: Int?, val isDay: Boolean, val condition: String?,
+    val place: String? = null, val source: String? = null,   // source: windows | network | manual
+    val humidity: Double? = null, val windKmh: Double? = null, val rainPct: Double? = null,
+)
+
+data class WxHour(val time: String, val tempC: Double?, val code: Int?, val rainPct: Double?, val isDay: Boolean)
+data class WxDay(
+    val date: String, val code: Int?, val highC: Double?, val lowC: Double?, val rainPct: Double?,
+    val rainMm: Double?, val sunrise: String?, val sunset: String?, val uvMax: Double?,
+)
+data class WeatherDetail(
+    val now: Weather, val country: String?, val accuracyM: Double?, val updated: Double?,
+    val dewPointC: Double?, val cloudPct: Double?, val pressureHpa: Double?, val windDir: String?,
+    val gustKmh: Double?, val visibilityKm: Double?, val uv: Double?, val aqi: Double?, val aqiLabel: String?,
+    val pm25: Double?, val sunrise: String?, val sunset: String?, val hourly: List<WxHour>, val daily: List<WxDay>,
+)
+
+private fun parseWeather(w: JSONObject) = Weather(
+    w.s("city"), w.d("temp_c"), w.d("feels_c"), w.d("high_c"), w.d("low_c"),
+    w.d("code")?.toInt(), w.optBoolean("is_day", true), w.s("condition"),
+    w.s("place"), w.s("location_source"), w.d("humidity"), w.d("wind_kmh"), w.d("rain_pct"),
+)
+
+private fun parseWeatherDetail(o: JSONObject) = WeatherDetail(
+    now = parseWeather(o), country = o.s("country"), accuracyM = o.d("accuracy_m"), updated = o.d("updated"),
+    dewPointC = o.d("dew_point_c"), cloudPct = o.d("cloud_pct"), pressureHpa = o.d("pressure_hpa"),
+    windDir = o.s("wind_dir"), gustKmh = o.d("gust_kmh"), visibilityKm = o.d("visibility_km"), uv = o.d("uv"),
+    aqi = o.d("aqi"), aqiLabel = o.s("aqi_label"), pm25 = o.d("pm25"),
+    sunrise = o.s("sunrise"), sunset = o.s("sunset"),
+    hourly = o.optJSONArray("hourly").mapObj { h ->
+        WxHour(h.optString("time"), h.d("temp_c"), h.d("code")?.toInt(), h.d("rain_pct"), h.optBoolean("is_day", true))
+    },
+    daily = o.optJSONArray("daily").mapObj { d ->
+        WxDay(d.optString("date"), d.d("code")?.toInt(), d.d("high_c"), d.d("low_c"), d.d("rain_pct"),
+            d.d("rain_mm"), d.s("sunrise"), d.s("sunset"), d.d("uv_max"))
+    },
 )
 
 data class AiApp(
@@ -186,6 +221,7 @@ data class Stats(
     val bluetooth: BtState? = null,
     val wifi: WifiState? = null,
     val whatsapp: WhatsApp? = null,
+    val weatherDetail: WeatherDetail? = null,
 )
 
 private fun parseProcs(p: JSONObject) = ProcList(
@@ -254,10 +290,8 @@ fun parseStats(text: String): Stats? = try {
                     m.d("position_s"), m.d("duration_s"), m.s("art_id"))
             },
             volume = o.optJSONObject("volume")?.let { v -> Volume(v.d("level"), v.optBoolean("muted")) },
-            weather = o.optJSONObject("weather")?.let { w ->
-                Weather(w.s("city"), w.d("temp_c"), w.d("feels_c"), w.d("high_c"), w.d("low_c"),
-                    w.d("code")?.toInt(), w.optBoolean("is_day", true), w.s("condition"))
-            },
+            weather = o.optJSONObject("weather")?.let { parseWeather(it) },
+            weatherDetail = o.optJSONObject("weather_detail")?.let { parseWeatherDetail(it) },
             ai = o.optJSONObject("ai")?.let { parseAi(it) },
             processes = o.optJSONObject("processes")?.let { parseProcs(it) },
             launcherHints = o.optJSONObject("launcher")?.let { l -> l.keys().asSequence().associateWith { l.s(it) } }

@@ -83,6 +83,8 @@ fun HomePage(
     onMute: () -> Unit,
     onCity: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onWeatherAuto: () -> Unit = {},
+    onOpenWeather: () -> Unit = {},
 ) {
     val s = state.stats ?: return
     var settings by remember { mutableStateOf(false) }
@@ -93,7 +95,7 @@ fun HomePage(
     ) {
         Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 18.dp)) {
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                ClockBlock(state, s, Modifier.weight(1f).fillMaxHeight()) { settings = true }
+                ClockBlock(state, s, Modifier.weight(1f).fillMaxHeight(), onOpenWeather) { settings = true }
                 Spacer(Modifier.width(20.dp))
                 MediaBlock(s.media, s.volume, state.art, onMedia, onVolume, onMute, Modifier.weight(1.05f).fillMaxHeight())
             }
@@ -101,13 +103,14 @@ fun HomePage(
             StatRow(s, state.history, Modifier.fillMaxWidth().height(86.dp))
         }
     }
-    if (settings) SettingsDialog(s.weather?.city ?: "", onDismiss = { settings = false },
-        onCity = { onCity(it); settings = false }, onDisconnect = { settings = false; onDisconnect() })
+    if (settings) SettingsDialog(s.weather, onDismiss = { settings = false },
+        onCity = { onCity(it); settings = false }, onAuto = { onWeatherAuto(); settings = false },
+        onDisconnect = { settings = false; onDisconnect() })
 }
 
 // ------------------------------------------------------------------ clock + weather
 @Composable
-private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onHostClick: () -> Unit) {
+private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: () -> Unit, onHostClick: () -> Unit) {
     val now by produceState(LocalDateTime.now()) {
         while (true) {
             value = LocalDateTime.now()
@@ -162,7 +165,7 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onHostClick
                 }
                 Text(date, color = Palette.text, fontSize = 15.sp, fontWeight = FontWeight.Light)
                 Spacer(Modifier.height(8.dp))
-                s.weather?.takeIf { it.tempC != null }?.let { w -> WeatherRow(w) }
+                s.weather?.takeIf { it.tempC != null }?.let { w -> WeatherRow(w, onWeather) }
             }
         }
     }
@@ -289,22 +292,25 @@ private fun WaGlyph(size: Dp) {
 }
 
 @Composable
-private fun WeatherRow(w: Weather) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun WeatherRow(w: Weather, onOpen: () -> Unit) {
+    // tap: the detailed Weather page
+    Row(verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onOpen() }.padding(vertical = 2.dp)) {
         Text(weatherEmoji(w.code, w.isDay), fontSize = 24.sp)
         Spacer(Modifier.width(8.dp))
         Text("${f0(w.tempC)}°", color = HomeColors.clock, fontSize = 26.sp, fontWeight = FontWeight.Light)
         Spacer(Modifier.width(10.dp))
         Column {
-            Text("${w.condition ?: ""} · ${w.city ?: ""}", color = Palette.text, fontSize = 12.sp,
-                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("↑${f0(w.highC)}° ↓${f0(w.lowC)}° · Feels like ${f0(w.feelsC)}°", color = Palette.dim,
-                fontSize = 11.sp, maxLines = 1)
+            Text("${w.condition ?: ""} · ${if (w.source == "manual") "" else "📍"}${w.city ?: ""}", color = Palette.text,
+                fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(listOfNotNull("↑${f0(w.highC)}° ↓${f0(w.lowC)}°", "Feels ${f0(w.feelsC)}°",
+                w.humidity?.let { "💧${f0(it)}%" }, w.rainPct?.let { "☔${f0(it)}%" }).joinToString(" · "),
+                color = Palette.dim, fontSize = 11.sp, maxLines = 1)
         }
     }
 }
 
-private fun weatherEmoji(code: Int?, day: Boolean): String = when (code) {
+fun weatherEmoji(code: Int?, day: Boolean): String = when (code) {
     null -> "🌡️"
     0 -> if (day) "☀️" else "🌙"
     1, 2 -> if (day) "🌤️" else "☁️"
@@ -558,16 +564,26 @@ private fun byteRate(bps: Double?): Pair<String, String> {
 
 // ------------------------------------------------------------------ settings
 @Composable
-private fun SettingsDialog(city: String, onDismiss: () -> Unit, onCity: (String) -> Unit, onDisconnect: () -> Unit) {
-    var c by remember { mutableStateOf(city) }
+private fun SettingsDialog(
+    w: Weather?, onDismiss: () -> Unit, onCity: (String) -> Unit, onAuto: () -> Unit, onDisconnect: () -> Unit,
+) {
+    val manual = w?.source == "manual"
+    var c by remember { mutableStateOf(if (manual) w?.city ?: "" else "") }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Palette.card,
         title = { Text("Settings", color = Palette.text) },
         text = {
             Column {
+                Text(if (manual) "Weather: fixed city (${w?.city ?: ""})" else "Weather: PC location (${w?.city ?: "finding…"})",
+                    color = Palette.dim, fontSize = 12.sp)
+                if (manual) {
+                    Text("Use PC location", color = Palette.accent, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onAuto() }.padding(vertical = 6.dp))
+                }
+                Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
-                    value = c, onValueChange = { c = it }, singleLine = true, label = { Text("Weather city") },
+                    value = c, onValueChange = { c = it }, singleLine = true, label = { Text("Or a fixed city") },
                     colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Palette.text, unfocusedTextColor = Palette.text),
                 )
                 Spacer(Modifier.height(12.dp))
@@ -575,7 +591,7 @@ private fun SettingsDialog(city: String, onDismiss: () -> Unit, onCity: (String)
                     modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onDisconnect() }.padding(vertical = 6.dp))
             }
         },
-        confirmButton = { TextButton(onClick = { onCity(c) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { if (c.isNotBlank()) onCity(c) else onDismiss() }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

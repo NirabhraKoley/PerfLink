@@ -14,14 +14,11 @@ import hashlib
 import json
 import os
 import sys
-import threading
 
 # WinRT initialises the main thread as a multithreaded apartment; comtypes (pycaw)
 # must use the same mode or it fails with "Cannot change thread mode".
 sys.coinit_flags = 0  # COINIT_MULTITHREADED
 import time
-import urllib.parse
-import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
@@ -198,70 +195,3 @@ class Volume:
 
 
 # ----------------------------------------------------------------------------- weather
-WMO = {
-    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-    45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
-    56: "Freezing drizzle", 57: "Freezing drizzle", 61: "Light rain", 63: "Rain",
-    65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain", 71: "Light snow",
-    73: "Snow", 75: "Heavy snow", 77: "Snow grains", 80: "Light showers", 81: "Showers",
-    82: "Violent showers", 85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm",
-    96: "Thunderstorm, hail", 99: "Thunderstorm, hail",
-}
-
-
-class Weather:
-    REFRESH = 600  # seconds
-
-    def __init__(self, city: str) -> None:
-        self.city = city
-        self.state: dict = {"city": city, "temp_c": None}
-        self.error: str | None = None
-        self._wake = threading.Event()
-        threading.Thread(target=self._loop, daemon=True).start()
-
-    def set_city(self, city: str) -> None:
-        self.city = city.strip()
-        self.state = {"city": self.city, "temp_c": None}
-        self._wake.set()
-
-    def _get(self, url: str) -> dict:
-        req = urllib.request.Request(url, headers={"User-Agent": "PerfLink/1.0"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.load(r)
-
-    def _loop(self) -> None:
-        while True:
-            city = self.city
-            try:
-                g = self._get("https://geocoding-api.open-meteo.com/v1/search?count=1&name="
-                              + urllib.parse.quote(city))
-                if not g.get("results"):
-                    raise ValueError(f"city '{city}' not found")
-                loc = g["results"][0]
-                q = urllib.parse.urlencode({
-                    "latitude": loc["latitude"], "longitude": loc["longitude"],
-                    "current": "temperature_2m,apparent_temperature,weather_code,is_day,"
-                               "relative_humidity_2m,wind_speed_10m",
-                    "daily": "temperature_2m_max,temperature_2m_min", "forecast_days": 1,
-                    "timezone": "auto",
-                })
-                w = self._get("https://api.open-meteo.com/v1/forecast?" + q)
-                cur, day = w["current"], w["daily"]
-                code = int(cur["weather_code"])
-                if city == self.city:
-                    self.state = {
-                        "city": loc.get("name", city),
-                        "temp_c": round(cur["temperature_2m"]),
-                        "feels_c": round(cur["apparent_temperature"]),
-                        "high_c": round(day["temperature_2m_max"][0]),
-                        "low_c": round(day["temperature_2m_min"][0]),
-                        "code": code, "is_day": bool(cur.get("is_day", 1)),
-                        "condition": WMO.get(code, "—"),
-                        "humidity": cur.get("relative_humidity_2m"),
-                        "wind_kmh": cur.get("wind_speed_10m"),
-                    }
-                    self.error = None
-            except Exception as e:  # noqa: BLE001
-                self.error = f"weather: {e}"
-            self._wake.wait(self.REFRESH if self.error is None else 60)
-            self._wake.clear()

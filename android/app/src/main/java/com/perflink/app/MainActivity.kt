@@ -201,10 +201,11 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
 
 // =============================================================================== Dashboard
 // Page order: gaming stats first, then system info, then controls.
-// Pages loop, so Remote (last) is one swipe left of Home, with Launcher next to it.
+// Pages loop, so Weather (last) is one swipe left of Home, then Remote and Launcher.
 //   0 Home · 1 Performance · 2 Overlay · 3 Processes · 4 USB · 5 Bluetooth · 6 Sessions · 7 OBS · 8 Launcher
-//   · 9 Remote (mouse and keyboard)
-private const val PAGES = 10
+//   · 9 Remote (mouse and keyboard) · 10 Weather (one swipe left of Home)
+private const val PAGES = 11
+private const val WEATHER_PAGE = 10
 private const val OBS_PAGE = 7
 
 // Endless swiping: the pager has a huge number of slots and each slot shows page (slot % PAGES).
@@ -217,6 +218,7 @@ private const val LOOP_START = LOOP_SLOTS / 2  // a multiple of PAGES, so slot L
 fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
     val pager = rememberPagerState(initialPage = LOOP_START + startPage.coerceIn(0, PAGES - 1)) { LOOP_SLOTS }
     val current = pager.currentPage % PAGES
+    val pageScope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 0) { slot ->
             val page = slot % PAGES
@@ -236,7 +238,9 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                     Spacer(Modifier.height(14.dp))
                     Chip("Choose another PC", Palette.accent) { vm.disconnect() }
                 }
-                page == 0 -> HomePage(state, vm::media, vm::setVolume, vm::toggleMute, vm::setCity, vm::disconnect)
+                page == 0 -> HomePage(state, vm::media, vm::setVolume, vm::toggleMute, vm::setCity, vm::disconnect,
+                    onWeatherAuto = vm::weatherAuto,
+                    onOpenWeather = { pageScope.launch { pager.animateScrollToPage(pager.currentPage - 1) } })
                 page == 1 -> StatsPage(state, compact = false, onDisconnect = vm::disconnect)
                 page == 2 -> StatsPage(state, compact = true, onDisconnect = vm::disconnect)
                 page == 3 -> ProcessesPage(state)
@@ -245,7 +249,8 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 page == 6 -> SessionsPage(state)
                 page == OBS_PAGE -> ObsPage(state, vm)
                 page == 8 -> LauncherPage(state, vm::action)
-                else -> RemotePage(state, vm)
+                page == 9 -> RemotePage(state, vm)
+                else -> WeatherPage(state)
             }
         }
         // Only ask the PC for OBS preview frames while the OBS page is showing

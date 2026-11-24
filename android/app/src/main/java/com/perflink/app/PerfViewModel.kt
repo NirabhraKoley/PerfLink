@@ -351,6 +351,9 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setVolume(pct: Double) = send(JSONObject().put("cmd", "volume").put("value", pct))
     fun toggleMute() = send(JSONObject().put("cmd", "mute"))
+    /** Weather follows the PC's location again (after a city was typed in settings). */
+    fun weatherAuto() = send(JSONObject().put("cmd", "weather_auto"))
+
     fun setCity(city: String) {
         if (city.isNotBlank()) send(JSONObject().put("cmd", "set_city").put("city", city.trim()))
     }

@@ -71,13 +71,14 @@ from whatsapp import WhatsAppNotifications
 import remote_input
 from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
-from extras import Media, Volume, Weather, load_config, save_config
+from extras import Media, Volume, load_config, save_config
+from weather import Weather
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.5"
+VERSION = "1.6"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -375,13 +376,15 @@ class Agent:
         self.clients: set = set()
         self.latest: dict = {}
         self.config = load_config()
-        if city:
+        if city:  # --city: a fixed city instead of the PC's location
             self.config["city"] = city
+            self.config["weather_mode"] = "manual"
             save_config(self.config)
         self.media = Media()
         self.media.on_art = self._broadcast_art
         self.volume = Volume()
-        self.weather = Weather(self.config.get("city", "Kolkata"))
+        # weather follows the PC's location unless a city was chosen in the app's settings
+        self.weather = Weather(self.config.get("city"), self.config.get("weather_mode", "auto"))
         self.ai = AiStatus()
         self.procs = Processes()  # after Sensors: reuses its pythonnet setup
         self.launcher = Launcher(self.volume)
@@ -411,6 +414,11 @@ class Agent:
         elif cmd == "set_city" and str(msg.get("city", "")).strip():
             self.weather.set_city(str(msg["city"]))
             self.config["city"] = self.weather.city
+            self.config["weather_mode"] = "manual"
+            save_config(self.config)
+        elif cmd == "weather_auto":   # "Use PC location" in the app's settings
+            self.weather.use_pc_location()
+            self.config["weather_mode"] = "auto"
             save_config(self.config)
         else:
             return
@@ -448,6 +456,7 @@ class Agent:
         snap["media"] = dict(self.media.state)
         snap["volume"] = self.volume.read()  # COM: main thread only
         snap["weather"] = dict(self.weather.state)
+        snap["weather_detail"] = self.weather.detail
         snap["ai"] = self.ai.snapshot()
         snap["processes"] = self.procs.snapshot()
         snap["launcher"] = self.launcher.info()
@@ -584,7 +593,7 @@ async def main() -> None:
     ap = argparse.ArgumentParser(description="PerfLink PC agent")
     ap.add_argument("--interval", type=float, default=0.5, help="seconds between updates")
     ap.add_argument("--ping-host", default="1.1.1.1", help="host used for ping/jitter/loss")
-    ap.add_argument("--city", default=None, help="weather city (saved to config.json; default Kolkata)")
+    ap.add_argument("--city", default=None, help="fixed weather city instead of the PC's location (saved to config.json)")
     ap.add_argument("--port", type=int, default=WS_PORT, help="WebSocket port (default 47800)")
     ap.add_argument("--discovery-port", type=int, default=DISCOVERY_PORT, help="UDP discovery port (default 47801)")
     ap.add_argument("--tray", action="store_true", help="run in the background with a system-tray icon (no console)")
