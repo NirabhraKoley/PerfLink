@@ -194,6 +194,7 @@ Get-ChildItem (Split-Path $App) -Directory -Filter "$(Split-Path $App -Leaf).old
 $old = $null
 $hadBin = $false
 $pcKept = $false      # true: the PC part couldn't be updated now; the current version keeps running
+$inPlace = $false     # true: the folder couldn't be swapped, so its files were updated where they are
 $pcWho = $null
 for ($try = 1; ; $try++) {
     try {
@@ -204,6 +205,12 @@ for ($try = 1; ; $try++) {
         break
     } catch {
         if ($try -ge 10) {
+            # A program running "in" the folder stops Windows from renaming it, but its files can
+            # still be replaced: copy the new version over the old one where it is.
+            $old = $null
+            & robocopy $src.FullName $App /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -lt 8) { $inPlace = $true; break }
+
             $who = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
                 Where-Object { $_.ProcessId -ne $PID -and ($_.ExecutablePath -like "$App\*" -or $_.CommandLine -like "*$App*") } |
                 ForEach-Object { "$($_.Name) (pid $($_.ProcessId))" }
@@ -229,7 +236,7 @@ if ($pcKept) {
     Warn 'The current version keeps working. Close any File Explorer or terminal window open in that folder,'
     Warn 'or restart the PC, then run the command again to update it.'
 } else {
-    Move-Item $src.FullName $App
+    if (-not $inPlace) { Move-Item $src.FullName $App }
     # marker: the uninstaller only ever deletes folders that carry it
     Set-Content (Join-Path $App '.perflink-install') "PerfLink install folder (created by install.ps1 on $(Get-Date -Format s)). The uninstaller deletes this folder." -Encoding utf8
     if ($old) {
@@ -245,7 +252,7 @@ if ($pcKept) {
         Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue   # anything still locked goes next time
     }
     foreach ($f in $keep.Keys) { Set-Content (Join-Path $App $f) $keep[$f] -Encoding utf8 }
-    Done "Installed to $App"
+    Done $(if ($inPlace) { "Updated in place in $App (the folder was in use, so its files were replaced where they are)" } else { "Installed to $App" })
 
     # ------------------------------------------------------------------ 3. dependencies
     Step 'Installing dependencies (Python packages, PresentMon, LibreHardwareMonitor)'
