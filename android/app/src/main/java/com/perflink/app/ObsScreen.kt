@@ -110,7 +110,7 @@ private fun ObsLogo(size: Int) {
 @Composable
 private fun ObsConnected(obs: ObsState, state: UiState, vm: PerfViewModel) {
     var confirmLive by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 20.dp)) {
+    Row(Modifier.fillMaxSize().padding(start = 20.dp + DisconnectGap, end = 20.dp, top = 14.dp, bottom = 20.dp)) {
         // ---------------- left: preview + outputs
         Column(Modifier.weight(1.15f).fillMaxHeight()) {
             Box(

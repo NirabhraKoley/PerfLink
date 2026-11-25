@@ -98,7 +98,7 @@ fun UsbPage(state: UiState) {
         Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 22.dp)) {
             // ---------------- left: the devices
             Column(Modifier.weight(2f).fillMaxHeight()) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = DisconnectGap, bottom = 10.dp)) {
                     Text("USB", color = UsbCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                     Spacer(Modifier.width(10.dp))
                     Text("plugged into this PC", color = Palette.dim, fontSize = 12.sp)

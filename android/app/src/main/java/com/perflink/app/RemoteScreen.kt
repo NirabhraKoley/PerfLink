@@ -62,7 +62,7 @@ fun RemotePage(state: UiState, vm: PerfViewModel) {
         )
     ) {
         Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = HomeButtonGap)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = DisconnectGap, end = HomeButtonGap)) {
                 Text("REMOTE", color = RemoteAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                 Spacer(Modifier.width(8.dp))
                 Text("mouse and keyboard for ${state.stats?.host ?: "the PC"} · swipe here to change page",

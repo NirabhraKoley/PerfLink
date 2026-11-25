@@ -49,7 +49,7 @@ fun SessionsPage(state: UiState) {
             Brush.radialGradient(listOf(Color(0xFF0D2526), Color(0xFF080B0E)), radius = 1400f)
         )
     ) {
-        Row(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 22.dp)) {
+        Row(Modifier.fillMaxSize().padding(start = 24.dp + DisconnectGap, end = 24.dp, top = 18.dp, bottom = 22.dp)) {
             // ---------------- left: sessions + AI apps
             Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
                 val sessions = ai?.sessions ?: emptyList()

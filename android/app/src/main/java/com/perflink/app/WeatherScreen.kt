@@ -73,7 +73,7 @@ fun WeatherPage(state: UiState) {
 
 @Composable
 private fun Header(d: WeatherDetail) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = HomeButtonGap)) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = DisconnectGap, end = HomeButtonGap)) {
         Text("WEATHER", color = WxBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
         Spacer(Modifier.width(10.dp))
         Text("📍 " + listOfNotNull(d.now.place ?: d.now.city, d.country).joinToString(", "), color = Palette.text,

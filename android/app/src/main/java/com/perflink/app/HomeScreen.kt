@@ -123,7 +123,7 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
 
     var waOpen by remember { mutableStateOf(false) }
     Column(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = DisconnectGap)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 // may shrink (with …) so the battery and USB / Wi-Fi labels always fit
@@ -535,7 +535,9 @@ private fun StatRow(s: Stats, h: History, modifier: Modifier) {
             "${temp(s.gpu.tempC)} · ${s.gpu.powerW?.let { "${f0(it)} W" } ?: "N/A"}", h.gpuUtil, 100f, Modifier.weight(1f))
         StatTile("RAM (${f0(s.ram.util)}%)", HomeColors.ram,
             s.ram.usedMb?.let { String.format(Locale.US, "%.1f", it / 1024) } ?: "N/A", "GB",
-            "${s.ram.usedMb?.let { String.format(Locale.US, "%.1f", it / 1024) } ?: "?"} / ${s.ram.totalMb?.let { f0(it / 1024) } ?: "?"} GB",
+            "${s.ram.usedMb?.let { String.format(Locale.US, "%.1f", it / 1024) } ?: "?"} / ${s.ram.totalMb?.let { f0(it / 1024) } ?: "?"} GB" +
+                // the split, when there's more than one module: "· 8+8"
+                (s.ram.modules.takeIf { it.size > 1 }?.joinToString("+", prefix = " · ") { "${it.gb}" } ?: ""),
             h.ram, 100f, Modifier.weight(1f))
         val (uv, uu) = byteRate(s.net.uploadBps)
         StatTile("NETWORK", HomeColors.net, dv, du,

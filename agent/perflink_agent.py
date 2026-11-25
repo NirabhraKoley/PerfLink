@@ -79,7 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.14"
+VERSION = "1.16"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -449,7 +449,7 @@ class Agent:
             "frames": self.frames.snapshot(foreground_pid()),
             "gpu": gpu,
             "cpu": cpu,
-            "ram": {"used_mb": round(vm.used / 2**20), "total_mb": round(vm.total / 2**20),
+            "ram": {"used_mb": round(vm.used / 2**20), "total_mb": round(vm.total / 2**20), "modules": RAM_MODULES,
                     "util": vm.percent},
             "net": self.net.read(),
             "errors": errors,
@@ -632,6 +632,34 @@ def _pc_kind() -> str:
 
 
 PC_KIND = _pc_kind()
+
+# RAM sticks as Windows lists them (read once, in the background, so start-up isn't slowed)
+RAM_MODULES: list[dict] = []
+_DDR = {20: "DDR", 21: "DDR2", 24: "DDR3", 26: "DDR4", 34: "DDR5", 35: "LPDDR5", 30: "LPDDR4"}
+
+
+def _read_ram_modules() -> None:
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "Get-CimInstance Win32_PhysicalMemory | Select-Object DeviceLocator, Capacity, "
+                              "ConfiguredClockSpeed, Speed, SMBIOSMemoryType, Manufacturer | ConvertTo-Json -Compress"],
+                             capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
+        data = json.loads(out) if out else []
+        if isinstance(data, dict):
+            data = [data]
+        RAM_MODULES[:] = [{
+            "gb": round(int(m.get("Capacity") or 0) / 2**30),
+            "mts": m.get("ConfiguredClockSpeed") or m.get("Speed"),
+            "type": _DDR.get(m.get("SMBIOSMemoryType")),
+            "slot": (m.get("DeviceLocator") or "").strip(),
+            "maker": (m.get("Manufacturer") or "").strip() or None,
+        } for m in data if int(m.get("Capacity") or 0) > 0]
+    except Exception as e:  # noqa: BLE001
+        print(f"[!] couldn't read RAM modules: {e}")
+
+
+threading.Thread(target=_read_ram_modules, daemon=True).start()
 
 
 async def main() -> None:

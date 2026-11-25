@@ -70,7 +70,7 @@ fun ProcessesPage(state: UiState) {
         )
     ) {
         Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 20.dp)) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp, end = HomeButtonGap - 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = DisconnectGap, bottom = 10.dp, end = HomeButtonGap - 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("PROCESSES", color = ProcPink, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                 Spacer(Modifier.width(10.dp))
                 Text(

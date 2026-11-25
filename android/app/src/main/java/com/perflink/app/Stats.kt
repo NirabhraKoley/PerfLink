@@ -19,7 +19,32 @@ data class Cpu(
     val clockMhz: Double?, val tempC: Double?, val powerW: Double?,
 )
 
-data class Ram(val usedMb: Double?, val totalMb: Double?, val util: Double?)
+data class RamModule(val gb: Int, val mts: Int?, val type: String?, val slot: String?)
+data class Ram(val usedMb: Double?, val totalMb: Double?, val util: Double?, val modules: List<RamModule> = emptyList())
+
+/** Just the split: "8 GB + 8 GB", or "16 GB" for one module; null until the PC reports its modules. */
+fun Ram.split(): String? = when {
+    modules.isEmpty() -> null
+    modules.size == 1 -> "${modules[0].gb} GB"
+    else -> modules.joinToString(" + ") { "${it.gb} GB" }
+}
+
+/** How the memory is installed: "8 GB + 8 GB · DDR4-2666 · dual channel", or "16 GB (one module) · DDR4-3200". */
+fun Ram.layout(): String? {
+    if (modules.isEmpty()) return null
+    val sizes = if (modules.size == 1) "${modules[0].gb} GB (one module)" else modules.joinToString(" + ") { "${it.gb} GB" }
+    val kind = modules.firstNotNullOfOrNull { it.type }?.let { t -> modules.firstNotNullOfOrNull { it.mts }?.let { "$t-$it" } ?: t }
+    // modules on different memory controllers / channels work in parallel (dual / quad channel)
+    val channels = modules.mapNotNull { m -> m.slot?.let { Regex("""(Controller\d+)?-?(Channel[A-Z])?""", RegexOption.IGNORE_CASE).find(it)?.value } }
+        .filter { it.isNotBlank() }.toSet().size
+    val chan = when {
+        modules.size < 2 || channels < 2 -> null
+        channels == 2 -> "dual channel"
+        channels == 4 -> "quad channel"
+        else -> "$channels channels"
+    }
+    return listOfNotNull(sizes, kind, chan).joinToString(" · ")
+}
 
 data class Net(
     val downloadBps: Double?, val uploadBps: Double?, val totalRecvMb: Double?,
@@ -285,7 +310,9 @@ fun parseStats(text: String): Stats? = try {
                 g.d("vram_total_mb"), g.d("fan_rpm"), g.d("voltage_v")),
             cpu = Cpu(c.s("name"), c.d("util"), c.optJSONArray("per_core").doubles(),
                 c.d("clock_mhz"), c.d("temp_c"), c.d("power_w")),
-            ram = Ram(r.d("used_mb"), r.d("total_mb"), r.d("util")),
+            ram = Ram(r.d("used_mb"), r.d("total_mb"), r.d("util"), r.optJSONArray("modules").mapObj { m ->
+                RamModule(m.optInt("gb"), m.d("mts")?.toInt(), m.s("type"), m.s("slot"))
+            }),
             net = Net(n.d("download_bps"), n.d("upload_bps"), n.d("total_recv_mb"),
                 n.d("total_sent_mb"), n.d("ping_ms"), n.d("ping_avg_ms"), n.d("jitter_ms"),
                 n.d("packet_loss_pct"), n.s("ping_host"), n.s("interface"), n.s("local_ip"),

@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.CompositionLocalProvider
@@ -315,10 +317,28 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
         LaunchedEffect(current) { vm.obsView(PAGE_ORDER[current] == Page.Obs) }
         // Home button, top-right, on every page except Home itself.
         // Goes to the nearest Home slot (forward or back), so it never scrolls more than half the loop.
+        // The slide runs in the Dashboard's scope, not one belonging to the button: the button disappears as
+        // soon as the pager is more than halfway to Home, and that would cancel the slide midway.
         if (current != 0 && state.stats != null) {
-            val scope = rememberCoroutineScope()
             HomeButton(Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 8.dp)) {
-                scope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Home)) }
+                pageScope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Home)) }
+            }
+        }
+        // Disconnect button, top-left, on every page (asks first)
+        if (state.stats != null) {
+            var ask by remember { mutableStateOf(false) }
+            DisconnectButton(Modifier.align(Alignment.TopStart).padding(top = 6.dp, start = 8.dp)) { ask = true }
+            if (ask) {
+                val who = state.stats.user?.let { "$it's ${state.stats.kind?.let { k -> if (k.equals("Laptop", true)) "laptop" else "PC" } ?: "PC"}" }
+                    ?: state.stats.host ?: "the PC"
+                AlertDialog(
+                    onDismissRequest = { ask = false },
+                    containerColor = Palette.card,
+                    title = { Text("Disconnect from $who?", color = Palette.text, fontSize = 17.sp) },
+                    text = { Text("You can connect again from the list of PCs.", color = Palette.dim, fontSize = 13.sp) },
+                    confirmButton = { TextButton(onClick = { ask = false; vm.disconnect() }) { Text("Disconnect", color = Palette.bad) } },
+                    dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancel") } },
+                )
             }
         }
         // USB plug/unplug pop-up (shown on every page)
@@ -357,12 +377,30 @@ fun HomeButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
 /** Space each page leaves at its top-right so its own controls aren't hidden under the Home button. */
 val HomeButtonGap = 44.dp
 
+/** Space each page's top-left title leaves for the Disconnect button (on top of the page's own padding). */
+val DisconnectGap = 30.dp
+
+private const val POWER_ICON = "M12 3.5v8 M7 6.6a7.2 7.2 0 1 0 10 0"
+
+/** Small round power button that disconnects from the PC (after asking). */
+@Composable
+fun DisconnectButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.size(34.dp).clip(CircleShape).background(Color(0xCC1A222C))
+            .border(1.dp, Palette.bad.copy(alpha = 0.45f), CircleShape).clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(rememberVectorPainter(lineIcon(POWER_ICON)), contentDescription = "Disconnect", modifier = Modifier.size(18.dp),
+            colorFilter = ColorFilter.tint(Palette.bad))
+    }
+}
+
 @Composable
 fun StatsPage(state: UiState, compact: Boolean, onDisconnect: () -> Unit) {
     val s = state.stats
     Column(Modifier.fillMaxSize().padding(bottom = 10.dp)) {
         // Top bar
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = HomeButtonGap + 8.dp),
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp + DisconnectGap, top = 10.dp, bottom = 10.dp, end = HomeButtonGap + 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             val (dot, label) = when (state.conn) {
                 Conn.Connected -> Palette.good to "Live"
@@ -379,8 +417,6 @@ fun StatsPage(state: UiState, compact: Boolean, onDisconnect: () -> Unit) {
             }
             Text(if (compact) "OVERLAY" else "PERFORMANCE", color = Palette.dim, fontSize = 11.sp,
                 fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-            Spacer(Modifier.width(12.dp))
-            Chip("Disconnect", Palette.bad) { onDisconnect() }
         }
         if (s == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -402,26 +438,28 @@ fun Chip(text: String, color: Color = Palette.accent, onClick: () -> Unit) {
 // ---------------------------------------------------------------- compact (like the PC overlay)
 @Composable
 fun CompactView(s: Stats) {
-    // Same order as AMD's in-game overlay, then extras (CPU temp, network).
+    // AMD's in-game overlay order (RAM split added after system memory), then extras (CPU temp, network);
+    // the two AMD-driver-only rows, always N/A here, come last.
     // FRAME GEN LAG and UPSCALE UPGRADE only come from AMD's driver (Fluid Motion Frames / FSR upgrade);
     // no public interface exposes them, so they read N/A, like AMD's overlay when those features are off.
     val rows = listOf(
         Triple("FPS", f0(s.frames.fps), fpsColor(s.frames.fps)),
         Triple("FRAME TIME", s.frames.frameTimeMs?.let { "${f1(it)} ms" } ?: "N/A", Palette.text),
         Triple("99th% FPS", f0(s.frames.low1Fps), fpsColor(s.frames.low1Fps)),
-        Triple("FRAME GEN LAG", "N/A", Palette.dim),
         Triple("GPU UTIL", pct(s.gpu.util), Palette.text),
         Triple("GPU PWR", s.gpu.powerW?.let { "${f0(it)} W" } ?: "N/A", Palette.text),
         Triple("GPU TEMP", temp(s.gpu.tempC), tempColor(s.gpu.tempC)),
         Triple("GPU MEM UTIL", s.gpu.vramUsedMb?.let { "${f0(it)} MB" } ?: "N/A", Palette.text),
-        Triple("GPU MEM CLK", s.gpu.memClockMhz?.let { "${f0(it)} MHz" } ?: "N/A", Palette.text),
         Triple("CPU UTIL", pct(s.cpu.util), Palette.text),
         Triple("SYSTEM MEM UTIL", s.ram.usedMb?.let { String.format(Locale.US, "%.1f GB", it / 1024) } ?: "N/A", Palette.text),
-        Triple("UPSCALE UPGRADE", "N/A", Palette.dim),
+        Triple("RAM", s.ram.split() ?: "N/A", Palette.text),   // 8 GB + 8 GB, or 16 GB
+        Triple("GPU MEM CLK", s.gpu.memClockMhz?.let { "${f0(it)} MHz" } ?: "N/A", Palette.text),
         Triple("CPU TEMP", temp(s.cpu.tempC), tempColor(s.cpu.tempC)),
         Triple("NET ↓", bps(s.net.downloadBps), Palette.down),
         Triple("NET ↑", bps(s.net.uploadBps), Palette.up),
         Triple("PING", s.net.pingMs?.let { "${f0(it)} ms" } ?: "N/A", pingColor(s.net.pingMs)),
+        Triple("FRAME GEN LAG", "N/A", Palette.dim),      // only AMD's driver has these two
+        Triple("UPSCALE UPGRADE", "N/A", Palette.dim),
     )
     LazyVerticalGrid(
         columns = GridCells.Adaptive(300.dp),
@@ -544,6 +582,7 @@ fun CpuCard(s: Stats, h: History) {
         KV("System mem util", s.ram.usedMb?.let { String.format(Locale.US, "%.1f GB", it / 1024) })
         KV("RAM", if (s.ram.usedMb != null && s.ram.totalMb != null) "${gb(s.ram.usedMb)} / ${gb(s.ram.totalMb)} (${pct(s.ram.util)})" else null)
         UsageBar(s.ram.util, Palette.cpu)
+        s.ram.layout()?.let { KV("Modules", it) }   // how the memory is installed: 8 GB + 8 GB, or 16 GB
         if (c.tempC == null) {
             Spacer(Modifier.height(6.dp))
             Text("Run the agent as Administrator for CPU temp/power.", color = Palette.dim, fontSize = 11.sp)
