@@ -21,16 +21,17 @@ Swipe left/right; the pages loop. A bar at the top of every page shows its name,
 |---|---|---|
 | `[0]` | **Home** | Clock with a 12h / 24h switch, date and year, phone battery % and USB / Wi-Fi, WhatsApp messages and calls waiting on the PC (mirrored from WhatsApp Desktop's notifications; tap to see them), weather for the PC's location (tap it for the Weather page), PC media player (cover art, seek, play/pause/skip, volume, mute) and CPU / GPU / RAM / network tiles with sparklines. Tap the PC name for settings (weather city, disconnect). |
 | `[1]` | **Mirror** | One swipe right of Home. The PC's main monitor live on the phone, with the mouse pointer, at up to about 30 frames a second, over Wi-Fi or USB. The PC's sound plays on the phone's speaker (switch at the top right). **Touch control** (off by default, so you can just watch and swipe pages): turn it on with the *Touch* switch at the top right. Then tap to click there, press and hold to right-click, drag to drag, and use two fingers to scroll. For example: play a video on the PC, switch the monitor off, and keep watching and listening on the phone. It streams only while this page is open. |
-| `[2]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
-| `[3]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
-| `[4]` | **Performance** | FPS, frame time, 1% / 0.1% lows, stutter graph; GPU load, power, temps, clocks, VRAM; CPU per-thread load, RAM; network speed, ping, jitter, packet loss. |
-| `[5]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
-| `[6]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
-| `[7]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
-| `[8]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
-| `[9]` | **Bluetooth & Wi-Fi** | Two panels. Left: how many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and the latest connect/disconnect. Right: the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
-| `[10]` | **USB** | How many USB devices are plugged in (hubs counted separately), with type, port and plug-in time, plus USB drives and a plug/unplug feed. |
-| `[11]` | **Weather** | One swipe left of Home (the last page), or tap the weather on Home. Detailed weather for where the **PC** is: now (feels like, humidity, wind and gusts, UV, air quality, pressure, visibility, sunrise and sunset), the next 24 hours and 7 days. |
+| `[2]` | **Clock** | Works on the phone alone (no PC needed), on a black background. Three tabs. **Clock & Calendar**: a big analog clock (hands for hours, minutes and seconds, with the day and date) or a big digital one (12h / 24h, the same setting as Home); the Analog / Digital choice is remembered. The *Style* button cycles five designs for each: analog **Classic**, **Minimal**, **Neon**, **Roman**, **Vintage** (old-school ivory dial, brass bezel, Breguet hands); digital **Thin**, **LCD** (seven-segment), **Neon**, **Flip** (flip-clock cards), **Nixie** (glowing orange digits in glass tubes). The calendar takes the design's colour, and each mode remembers its design. Next to it, this month's calendar with today circled; ‹ › for other months, tap the month name to come back. **Timers**: set hours, minutes and seconds (or 1 / 5 / 10 / 30 min), then Start, Pause, Resume, Reset, with a ring that empties as time runs out; at zero the phone rings and vibrates (stop it there, or from the banner on any page). **Stopwatch**: Start, Stop, Lap and Reset, to hundredths of a second, with each lap's time and the total (fastest lap in green, slowest in red). The timer and stopwatch keep running while you swipe to other pages. |
+| `[3]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
+| `[4]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
+| `[5]` | **Performance** | FPS, frame time, 1% / 0.1% lows, stutter graph; GPU load, power, temps, clocks, VRAM; CPU per-thread load, RAM; network speed, ping, jitter, packet loss. |
+| `[6]` | **Overlay** | A compact list in the same order as AMD's in-game overlay (FPS, frame time, 99th% FPS, GPU util/power/temp, GPU mem util/clock, CPU util, system memory…). |
+| `[7]` | **Processes** | Task Manager-style list grouped by app, with real Windows icons, CPU / RAM bars and a sort switch. Tap a row for details. |
+| `[8]` | **OBS** | Live preview, record / pause / go live / virtual cam / replay, scene switching, audio mixer. |
+| `[9]` | **Sessions** | Running Claude Code sessions, desktop AI apps (Claude, ChatGPT, Copilot, Ollama, LM Studio, Cursor…), and GitHub review requests / PRs (via the `gh` CLI). |
+| `[10]` | **Bluetooth & Wi-Fi** | Two panels. Left: how many Bluetooth devices are connected, with name, type (headphones, mouse, controller…), battery level and the latest connect/disconnect. Right: the PC's Wi-Fi network (name, signal, band/channel, Wi-Fi standard, speed, security, IP) or wired connection. |
+| `[11]` | **USB** | How many USB devices are plugged in (hubs counted separately), with type, port and plug-in time, plus USB drives and a plug/unplug feed. |
+| `[12]` | **Weather** | One swipe left of Home (the last page), or tap the weather on Home. Detailed weather for where the **PC** is: now (feels like, humidity, wind and gusts, UV, air quality, pressure, visibility, sunrise and sunset), the next 24 hours and 7 days. |
 
 A pop-up appears on every page when a USB device is plugged in or removed, or a Bluetooth device connects or disconnects.
 
@@ -114,7 +115,7 @@ adb shell am start -n com.perflink.app/.MainActivity -e host 127.0.0.1
 
 ### Open a specific page
 
-Add `--ei page N` (N = page index from the table above), e.g. `--ei page 6` opens Processes.
+Add `--ei page N` (N = page index from the table above), e.g. `--ei page 7` opens Processes.
 
 ## Optional setup
 
@@ -171,6 +172,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.19** | 25 Nov 2026 | **Clock page** (one swipe right of Mirror, works without the PC): analog or digital clock in five designs each (including old-school Vintage and Nixie), with a matching month calendar, a timer that rings and vibrates, and a stopwatch with laps. |
 | **1.18** | 25 Nov 2026 | Bigger Home clock that fills its space, with a slim 12h / 24h switch to its left. The date shows the year. RAM modules on Performance as a tidy table (`RAM 1 │ 8 GB │ DDR4 │ 2666 MT/s`). |
 | **1.17** | 25 Nov 2026 | A top bar on every page with the page name, Disconnect (left) and Home (right). The first page dot is a home icon. Each RAM stick on its own row with size, DDR type and speed. 12h / 24h clock switch. Layouts checked on 16:9, 20:9 and 4:3 screens and kept clear of camera cut-outs. Unit tests for the PC agent and the app. |
 | **1.16** | 25 Nov 2026 | Disconnect button (with confirm) on every page. RAM split (`8 GB + 8 GB`) on Home, Overlay and Performance. The Home button now always slides all the way to Home. *(1.15 was folded into this release.)* |

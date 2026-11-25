@@ -120,6 +120,9 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) intent?.getStringExtra("host")?.let { vm.connect(it) }
         val startPage = intent?.getIntExtra("page", 0) ?: 0  // `-ei page 1` opens on that page
         simulatedAspect = intent?.getFloatExtra("sim_aspect", 0f)?.takeIf { it > 0f }
+        startClockTab = intent?.getIntExtra("clock_tab", -1)?.takeIf { it in 0..2 }   // `--ei clock_tab 2`: Stopwatch
+        startClockDigital = intent?.takeIf { it.hasExtra("clock_digital") }?.getBooleanExtra("clock_digital", false)
+        startClockStyle = intent?.getIntExtra("clock_style", -1)?.takeIf { it in 0..4 }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Palette.accent, background = Palette.bg, surface = Palette.card)) {
               ScaledToScreen {
@@ -250,15 +253,26 @@ fun ScaledToScreen(content: @Composable () -> Unit) {
 /** Set from the `sim_aspect` launch extra (testing other screen shapes); null = this phone's own screen. */
 var simulatedAspect: Float? = null
 
+/** Set from the `clock_tab` launch extra: the Clock page opens on that tab (0 clock, 1 timers, 2 stopwatch). */
+var startClockTab: Int? = null
+
+/** Set from the `clock_digital` launch extra (testing): show the digital or analog clock without saving the choice. */
+var startClockDigital: Boolean? = null
+
+/** Set from the `clock_style` launch extra (testing): show clock design N (0-4) without saving the choice. */
+var startClockStyle: Int? = null
+
 private const val DESIGN_HEIGHT_DP = 360f
 private const val DESIGN_MIN_WIDTH_DP = 600f
 
 // =============================================================================== Dashboard
 // Page order, in one place (the page number is the position here; `-ei page N` opens page N):
-// Home, then using the PC (watch it, control it, quick actions), then gaming stats, then what's running
-// and streaming, then devices. Pages loop, so Weather (last) is one swipe left of Home and Mirror one right.
+// Home, Mirror, then the phone-only Clock, then using the PC (control it, quick actions), then gaming stats,
+// then what's running and streaming, then devices. Pages loop, so Weather (last) is one swipe left of Home
+// and Mirror one right.
 enum class Page(val title: String, val color: Long) {
-    Home("HOME", 0xFF4FC3F7), Mirror("MIRROR", 0xFF4FC3F7), Remote("REMOTE", 0xFF7C9CFF), Launcher("LAUNCHER", 0xFFF2C14E),
+    Home("HOME", 0xFF4FC3F7), Mirror("MIRROR", 0xFF4FC3F7), Clock("CLOCK", 0xFF2EE6C5),
+    Remote("REMOTE", 0xFF7C9CFF), Launcher("LAUNCHER", 0xFFF2C14E),
     Performance("PERFORMANCE", 0xFFFF7A59), Overlay("OVERLAY", 0xFFF2C14E), Processes("PROCESSES", 0xFFFF6FA8),
     Obs("OBS STUDIO", 0xFFB57BFF), Sessions("SESSIONS", 0xFFFF9F5A), Bluetooth("BLUETOOTH & NETWORK", 0xFF5AA9FF),
     Usb("USB", 0xFF4DD0E1), Weather("WEATHER", 0xFF6CB8FF),
@@ -287,6 +301,9 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
     val pager = rememberPagerState(initialPage = LOOP_START + startPage.coerceIn(0, PAGES - 1)) { LOOP_SLOTS }
     val current = pager.currentPage % PAGES
     val pageScope = rememberCoroutineScope()
+    // the Clock page's timer and stopwatch (kept here, so they keep going while you swipe)
+    val clockVm: ClockViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    LaunchedEffect(Unit) { startClockTab?.let { clockVm.tab = it; startClockTab = null } }
     // keep clear of camera holes / notches (punch-hole phones in landscape)
     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout)) {
       Column(Modifier.fillMaxSize()) {
@@ -313,7 +330,8 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
         HorizontalPager(pager, Modifier.fillMaxWidth().weight(1f), beyondViewportPageCount = 0) { slot ->
             val page = PAGE_ORDER[slot % PAGES]
             when {
-                state.stats == null -> Column(
+                // the Clock page is phone-only, so it works before the PC has answered
+                state.stats == null && page != Page.Clock -> Column(
                     Modifier.fillMaxSize().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
@@ -333,6 +351,7 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                         onWeatherAuto = vm::weatherAuto,
                         onOpenWeather = { pageScope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Weather)) } })
                     Page.Mirror -> MirrorPage(state, vm)
+                    Page.Clock -> ClockPage(clockVm)
                     Page.Remote -> RemotePage(state, vm)
                     Page.Launcher -> LauncherPage(state, vm::action)
                     Page.Performance -> StatsPage(state, compact = false, onDisconnect = vm::disconnect)
@@ -355,6 +374,9 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
         // its own would cancel the slide midway)
         // USB plug/unplug pop-up (shown on every page)
         state.usbAlert?.let { UsbAlertBanner(it, Modifier.align(Alignment.TopCenter).padding(top = 10.dp)) }
+        // the timer's "time's up" alarm can be stopped from any page (on the Timers tab it has its own button)
+        if (clockVm.ringing && !(PAGE_ORDER[current] == Page.Clock && clockVm.tab == 1))
+            TimerAlarmBanner(clockVm::stopAlarm, Modifier.align(Alignment.TopCenter).padding(top = TopBarHeight + 8.dp))
         // Page dots
         Row(
             Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp),
