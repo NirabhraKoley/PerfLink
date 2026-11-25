@@ -22,6 +22,18 @@ data class Cpu(
 data class RamModule(val gb: Int, val mts: Int?, val type: String?, val slot: String?)
 data class Ram(val usedMb: Double?, val totalMb: Double?, val util: Double?, val modules: List<RamModule> = emptyList())
 
+/** "dual channel" / "quad channel" when the modules sit on different memory channels (they work in parallel). */
+fun Ram.channels(): String? {
+    val n = modules.mapNotNull { m -> m.slot?.let { Regex("""(Controller\d+)?-?(Channel[A-Z])?""", RegexOption.IGNORE_CASE).find(it)?.value } }
+        .filter { it.isNotBlank() }.toSet().size
+    return when {
+        modules.size < 2 || n < 2 -> null
+        n == 2 -> "dual channel"
+        n == 4 -> "quad channel"
+        else -> "$n channels"
+    }
+}
+
 /** Just the split: "8 GB + 8 GB", or "16 GB" for one module; null until the PC reports its modules. */
 fun Ram.split(): String? = when {
     modules.isEmpty() -> null
@@ -34,15 +46,7 @@ fun Ram.layout(): String? {
     if (modules.isEmpty()) return null
     val sizes = if (modules.size == 1) "${modules[0].gb} GB (one module)" else modules.joinToString(" + ") { "${it.gb} GB" }
     val kind = modules.firstNotNullOfOrNull { it.type }?.let { t -> modules.firstNotNullOfOrNull { it.mts }?.let { "$t-$it" } ?: t }
-    // modules on different memory controllers / channels work in parallel (dual / quad channel)
-    val channels = modules.mapNotNull { m -> m.slot?.let { Regex("""(Controller\d+)?-?(Channel[A-Z])?""", RegexOption.IGNORE_CASE).find(it)?.value } }
-        .filter { it.isNotBlank() }.toSet().size
-    val chan = when {
-        modules.size < 2 || channels < 2 -> null
-        channels == 2 -> "dual channel"
-        channels == 4 -> "quad channel"
-        else -> "$channels channels"
-    }
+    val chan = channels()
     // type and speed are on each module's own row; the summary keeps them only if all modules agree
     val sameKind = modules.map { it.type to it.mts }.toSet().size == 1
     return listOfNotNull(sizes, kind.takeIf { sameKind }, chan).joinToString(" · ")

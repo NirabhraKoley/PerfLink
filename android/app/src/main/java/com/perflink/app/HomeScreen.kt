@@ -123,7 +123,7 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
     val hour12 = (now.hour % 12).let { if (it == 0) 12 else it }
     val hourText = if (use24) String.format(Locale.US, "%02d", now.hour) else "$hour12"
     val ampm = if (now.hour < 12) "AM" else "PM"
-    val date = now.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault()))
+    val date = now.format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.getDefault()))
 
     var waOpen by remember { mutableStateOf(false) }
     Column(modifier) {
@@ -166,22 +166,27 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val density = LocalDensity.current
             // Scale the clock to the space left (date + two weather lines take ~100dp below it)
+            // below the clock: date (~22dp) + gap + two-line weather row (~50dp) + slack = ~88dp; a line of digits is ~1.18x the font size.
+            // across: the 12h/24h switch (~34dp) + seconds/AM-PM (~30dp); "12:59" is ~2.6x the font size wide.
             val clockSp = with(density) {
-                minOf((maxHeight - 104.dp) * 0.92f, (maxWidth - 70.dp) / 3.4f).coerceAtLeast(24.dp).toSp()
+                minOf((maxHeight - 88.dp) / 1.18f, (maxWidth - 84.dp) / 2.6f).coerceIn(28.dp, 120.dp).toSp()
             }
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ClockFormatSwitch(use24) { use24 = it; prefs.edit().putBoolean("clock_24h", it).apply() }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Text(hourText, color = HomeColors.clock, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
                     Text(":", color = HomeColors.colon, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
                     Text(String.format(Locale.US, "%02d", now.minute), color = HomeColors.clock, fontSize = clockSp,
                         fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.padding(top = with(density) { (clockSp * 0.22f).toDp() })) {
+                    Spacer(Modifier.width(6.dp))
+                    // seconds over AM/PM, sized with the clock but never too small to read
+                    Column {
                         Text(String.format(Locale.US, "%02d", now.second), color = HomeColors.colon,
-                            fontSize = clockSp * 0.2f, fontWeight = FontWeight.Light)
-                        if (!use24) Text(ampm, color = Palette.dim, fontSize = clockSp * 0.17f, fontWeight = FontWeight.Medium)
+                            fontSize = maxOf(clockSp.value * 0.24f, 12f).sp, fontWeight = FontWeight.Light,
+                            lineHeight = maxOf(clockSp.value * 0.26f, 13f).sp)
+                        if (!use24) Text(ampm, color = Palette.dim, fontSize = maxOf(clockSp.value * 0.2f, 11f).sp,
+                            fontWeight = FontWeight.Medium, lineHeight = maxOf(clockSp.value * 0.22f, 12f).sp)
                     }
                 }
                 Text(date, color = Palette.text, fontSize = 15.sp, fontWeight = FontWeight.Light)
@@ -315,15 +320,21 @@ private fun WaGlyph(size: Dp) {
 /** "12h | 24h" switch: two pills side by side, the active one lit. */
 @Composable
 private fun ClockFormatSwitch(use24: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x14FFFFFF)).padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    // 12h over 24h: a slim pill left of the time
+    Column(
+        Modifier.width(34.dp).clip(RoundedCornerShape(9.dp)).background(Color(0x14FFFFFF)).padding(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         listOf(false to "12h", true to "24h").forEach { (v, label) ->
             val on = use24 == v
-            Text(label, color = if (on) Color(0xFF0B1418) else Palette.dim, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (on) HomeColors.clock else Color.Transparent)
-                    .clickable { onChange(v) }.padding(horizontal = 5.dp, vertical = 2.dp))
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp)).background(if (on) HomeColors.clock else Color.Transparent)
+                    .clickable { onChange(v) }.padding(vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (on) Color(0xFF0B1418) else Palette.dim, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                    lineHeight = 12.sp)
+            }
         }
     }
 }

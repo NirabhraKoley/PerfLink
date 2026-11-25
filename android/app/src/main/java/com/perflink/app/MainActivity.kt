@@ -78,6 +78,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -614,11 +615,7 @@ fun CpuCard(s: Stats, h: History) {
         KV("System mem util", s.ram.usedMb?.let { String.format(Locale.US, "%.1f GB", it / 1024) })
         KV("RAM", if (s.ram.usedMb != null && s.ram.totalMb != null) "${gb(s.ram.usedMb)} / ${gb(s.ram.totalMb)} (${pct(s.ram.util)})" else null)
         UsageBar(s.ram.util, Palette.cpu)
-        s.ram.layout()?.let { KV("Modules", it) }   // how the memory is installed: 8 GB + 8 GB, or 16 GB
-        // then each stick on its own row: size, DDR type and the speed it actually runs at
-        s.ram.modules.forEachIndexed { i, m ->
-            KV("  RAM ${i + 1}", listOfNotNull("${m.gb} GB", m.type, m.mts?.let { "$it MT/s" }).joinToString(" · "))
-        }
+        RamModules(s.ram)
         if (c.tempC == null) {
             Spacer(Modifier.height(6.dp))
             Text("Run the agent as Administrator for CPU temp/power.", color = Palette.dim, fontSize = 11.sp)
@@ -684,9 +681,40 @@ fun Tile(label: String, value: String, modifier: Modifier = Modifier, color: Col
 
 @Composable
 fun KV(k: String, v: String?) {
+    // the label never gets squeezed; a long value wraps on the right instead
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(k, color = Palette.dim, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(v ?: "N/A", color = Palette.text, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+        Text(k, color = Palette.dim, fontSize = 13.sp, maxLines = 1, softWrap = false)
+        Spacer(Modifier.width(12.dp))
+        Text(v ?: "N/A", color = Palette.text, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f), textAlign = TextAlign.End)
+    }
+}
+
+/** The RAM sticks as a small table: one row each with its size, DDR type and the speed it runs at. */
+@Composable
+fun RamModules(ram: Ram) {
+    if (ram.modules.isEmpty()) return
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Modules", color = Palette.dim, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(listOfNotNull(ram.split(), ram.channels()).joinToString(" · "), color = Palette.text, fontSize = 12.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    Spacer(Modifier.height(4.dp))
+    ram.modules.forEachIndexed { i, m ->
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(6.dp)).background(Color(0x0DFFFFFF))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("RAM ${i + 1}", color = Palette.dim, fontSize = 12.sp, modifier = Modifier.weight(1f), maxLines = 1)
+            Text("${m.gb} GB", color = Palette.text, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(0.9f), textAlign = TextAlign.End, maxLines = 1)
+            Text(m.type ?: "-", color = Palette.cpu, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(0.9f), textAlign = TextAlign.End, maxLines = 1)
+            Text(m.mts?.let { "$it MT/s" } ?: "-", color = Palette.text, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                modifier = Modifier.weight(1.5f), textAlign = TextAlign.End, maxLines = 1)
+        }
     }
 }
 
