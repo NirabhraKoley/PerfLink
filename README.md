@@ -66,7 +66,7 @@ That's it. Windows asks for administrator permission once (click **Yes**); then 
 **Phone app, automatically:** plug the phone into the PC with **USB debugging** allowed (once, in the phone's Developer options; on Xiaomi/Redmi also allow *Install via USB*). PerfLink then installs the app, and installs future updates by itself whenever the phone is plugged in.
 
 **Updates are automatic (1.21 and later), over the internet, no USB and no shared Wi-Fi needed:**
-- **PC:** PerfLink checks GitHub and installs a new version by itself, quietly in the background (no window, no prompt), within about 30 minutes, at sign-in and every 6 hours. The tray icon says when it's done. Tray menu → **Check for updates** checks right away.
+- **PC:** PerfLink checks GitHub and installs a new version by itself, quietly in the background (no window, no prompt), within about 30 minutes, at sign-in and every 2 hours (until it's on the latest version). The tray icon says when it's done. Tray menu → **Check for updates** checks right away; **Update now (PowerShell)** runs the install command in a PowerShell window you can watch.
 - **Phone:** the app checks GitHub when it opens and every 6 hours, asks you first (*Update available*: what's new, **Update now** / **Later**), then downloads the new `PerfLink.apk` and installs it. The first time, Android asks you to allow *Install unknown apps* for PerfLink and to tap **Update**; after that (Android 12 and newer) it updates without asking. Settings (tap the PC name on Home) → **Check for updates** checks right away.
 - To turn PC auto-update off, add `"auto_update": false` to `%LOCALAPPDATA%\PerfLink\agent\config.json`. Its log is `%LOCALAPPDATA%\PerfLink-update.log`.
 
@@ -177,6 +177,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.26** | 26 Nov 2026 | PC update checks **every 2 hours** (was 6): a PC that was off, or an update that failed, catches up within 2 hours. New tray item **Update now (PowerShell)** opens PowerShell and runs the install command, to update by hand and watch it. |
 | **1.25** | 26 Nov 2026 | **Asks before updating:** when a new version is out, the phone app shows *"Update available"* with the version and one line about what's new, with **Update now** / **Later** (Later asks again next time the app opens). |
 | **1.24** | 26 Nov 2026 | **Security: phones must be allowed.** When a phone connects over Wi-Fi for the first time, the PC shows *"<phone> wants to connect"* with **Allow** / **Block**; until then the phone gets nothing and can't control the PC. Decisions are remembered per phone (not per IP). Blocked phones are refused at once; the tray menu has **Allowed phones** and **Blocked phones** to forget or unblock one. Phones on USB are always trusted (they are plugged into the PC). |
 | **1.23** | 26 Nov 2026 | **USB ⇄ Wi-Fi switching:** pull the USB cable and the app moves to Wi-Fi by itself within about 10 s (Home shows *Wi-Fi*); plug it in again and it moves back to USB. Before, it kept saying *USB* and retrying the cable. |

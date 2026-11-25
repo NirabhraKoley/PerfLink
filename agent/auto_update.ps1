@@ -1,7 +1,7 @@
 # PerfLink auto-update for the PC.
 #
 # Run by the "PerfLink Update" scheduled task, which the installer sets up to run as administrator
-# without a prompt: at sign-in, every 6 hours, and whenever PerfLink itself notices a newer version
+# without a prompt: at sign-in, every 2 hours, and whenever PerfLink itself notices a newer version
 # on GitHub. It does nothing unless GitHub (main branch) has a newer version than this install; then
 # it runs the normal installer quietly (-Auto), which stops PerfLink, replaces its files, keeps the
 # settings, updates the phone app if a phone is plugged in, and starts PerfLink again.

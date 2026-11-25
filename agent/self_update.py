@@ -4,8 +4,12 @@ Keeps PerfLink on the PC up to date from GitHub, by itself.
 An installed copy (never a source checkout) checks GitHub every 30 minutes. When the version on
 GitHub (main branch) is newer, it starts the "PerfLink Update" task, which the installer set up to
 run as administrator without a prompt; that task (agent/auto_update.ps1) stops PerfLink, installs the
-new version and starts it again. The task also runs by itself at sign-in and every 6 hours, so
-updates still arrive if this check can't start it.
+new version and starts it again. The task also runs by itself at sign-in and every 2 hours (a PC
+that was off, or an update that failed, catches up within 2 hours), so updates still arrive if this
+check can't start it. PCs set up with the older 6-hour schedule are moved to 2 hours at start-up.
+
+The tray's "Update now (PowerShell)" opens a PowerShell window that runs the install command, to
+update by hand and watch it.
 
 Off switch: "auto_update": false in agent/config.json.
 """
@@ -20,6 +24,25 @@ import urllib.request
 
 TASK = "PerfLink Update"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+NEW_CONSOLE = 0x00000010          # CREATE_NEW_CONSOLE: its own PowerShell window
+BREAKAWAY = 0x01000000            # CREATE_BREAKAWAY_FROM_JOB: keeps running when the installer stops PerfLink
+
+# Moves the update task to "at sign-in + every 2 hours" (it was every 6 hours before 1.26).
+SCHEDULE_PS = r"""
+$t = Get-ScheduledTask -TaskName 'PerfLink Update' -ErrorAction SilentlyContinue
+if (-not $t) { 'no task'; return }
+if ($t.Triggers | Where-Object { $_.Repetition -and $_.Repetition.Interval -eq 'PT2H' }) { 'ok'; return }
+$l = New-ScheduledTaskTrigger -AtLogOn -User $t.Principal.UserId
+$l.Delay = 'PT3M'
+$r = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddHours(1)) -RepetitionInterval (New-TimeSpan -Hours 2) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)
+Set-ScheduledTask -TaskName 'PerfLink Update' -Trigger @($l, $r) | Out-Null
+'changed to every 2 hours'
+"""
+
+
+def install_command(repo: str) -> str:
+    return f"irm https://raw.githubusercontent.com/{repo}/main/install.ps1 | iex"
 
 
 def version_tuple(v: str | None) -> tuple:
@@ -51,6 +74,50 @@ class SelfUpdate:
         self._announce()
         if self.enabled:
             threading.Thread(target=self._loop, args=(first_check,), daemon=True).start()
+            threading.Thread(target=self.ensure_schedule, daemon=True).start()
+
+    # ---------------------------------------------------------------- the task's schedule
+    def ensure_schedule(self) -> str:
+        """Every 2 hours (older installs: every 6). Needs the administrator rights PerfLink starts with."""
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", SCHEDULE_PS],
+                                 capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW).stdout.strip()
+        except Exception as e:  # noqa: BLE001
+            out = f"failed: {e}"
+        if out and out != "ok":
+            print(f"[update] task schedule: {out}")
+        return out
+
+    # ---------------------------------------------------------------- tray: "Update now (PowerShell)"
+    def open_update_window(self) -> bool:
+        """Opens PowerShell and runs the install command in it, so the update can be watched.
+
+        The window is started by Windows' own shell (Explorer), not by PerfLink: the installer stops
+        PerfLink, and a window started by PerfLink could be closed along with it, halfway through the
+        update. So it runs like the command typed by hand: Windows asks "allow?" once (click Yes)."""
+        script = (f"$host.UI.RawUI.WindowTitle = 'PerfLink update'; "
+                  f"Write-Host 'Updating PerfLink from GitHub...' -ForegroundColor Cyan; {install_command(self.repo)}")
+        home = os.path.expanduser("~")   # never "inside" the folder the installer replaces
+        launcher = os.path.join(os.environ.get("TEMP", home), "perflink-update-now.cmd")
+        try:
+            lines = ["@echo off", 'cd /d "%USERPROFILE%"',
+                     f'powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "{script}"']
+            with open(launcher, "w", encoding="ascii", errors="replace", newline="\r\n") as f:
+                f.write("\n".join(lines) + "\n")
+            subprocess.Popen(["explorer.exe", launcher], cwd=home, creationflags=NO_WINDOW)
+            print("[update] opened PowerShell (via Explorer) to update by hand")
+            return True
+        except OSError as e:
+            print(f"[update] couldn't open the update window via Explorer: {e}")
+        args = ["powershell.exe", "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script]
+        for flags in (NEW_CONSOLE | BREAKAWAY, NEW_CONSOLE):   # fallback: start it directly
+            try:
+                subprocess.Popen(args, creationflags=flags, cwd=home)
+                return True
+            except OSError:
+                continue
+        self.notify("PerfLink", "Couldn't open PowerShell. Run the install command from the PerfLink page on GitHub.")
+        return False
 
     # ---------------------------------------------------------------- "updated to X" after an update
     def _announce(self) -> None:

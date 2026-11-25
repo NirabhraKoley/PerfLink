@@ -81,7 +81,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.25"
+VERSION = "1.26"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -802,6 +802,7 @@ async def main() -> None:
                                    notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None,
                                    enabled=agent.config.get("auto_update", True) is not False)
         agent.tray.on_check_update = lambda: agent.updater.check_now(manual=True)
+        agent.tray.on_update_now = agent.updater.open_update_window
         # tray menu: Allowed phones / Blocked phones
         agent.tray.get_devices = agent.devices.listing
         agent.tray.on_unblock = agent.devices.unblock

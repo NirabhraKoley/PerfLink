@@ -335,7 +335,8 @@ if ($pcKept) {
             -Description 'PerfLink: PC stats on your phone (tray icon)' -Force | Out-Null
         Done "Starts automatically when $ForUser signs in (as administrator, no prompt)"
 
-        # Auto-update: checks GitHub at sign-in, every 6 hours, and when PerfLink sees a new version
+        # Auto-update: checks GitHub at sign-in, every 2 hours (so a PC that was off, or an update that
+        # failed, catches up soon), and when PerfLink sees a new version
         # (it starts this task); installs it quietly, as administrator, no prompt. (Not re-registered
         # while it is the one running this update.)
         if (-not $Auto -or -not (Get-ScheduledTask -TaskName 'PerfLink Update' -ErrorAction SilentlyContinue)) {
@@ -344,13 +345,13 @@ if ($pcKept) {
                     -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$upd`" -Repo $Repo -Branch $Branch"
             $ut1 = New-ScheduledTaskTrigger -AtLogOn -User $ForUser
             $ut1.Delay = 'PT3M'
-            $ut2 = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddHours(1)) -RepetitionInterval (New-TimeSpan -Hours 6) `
+            $ut2 = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddHours(1)) -RepetitionInterval (New-TimeSpan -Hours 2) `
                     -RepetitionDuration (New-TimeSpan -Days 3650)
             $us = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
                     -RunOnlyIfNetworkAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
             Register-ScheduledTask -TaskName 'PerfLink Update' -Action $ua -Trigger @($ut1, $ut2) -Principal $p -Settings $us `
                 -Description 'PerfLink: installs new versions from GitHub by itself' -Force | Out-Null
-            Done 'Updates itself from GitHub (at sign-in and every 6 hours)'
+            Done 'Updates itself from GitHub (at sign-in and every 2 hours)'
         }
     }
 

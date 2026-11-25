@@ -232,5 +232,44 @@ class DevicesTests(unittest.TestCase):
         self.assertEqual(len(saves), n + 1)
 
 
+class UpdateNowTests(unittest.TestCase):
+    def _u(self):
+        import self_update as su, tempfile
+        d = tempfile.mkdtemp(); os.makedirs(os.path.join(d, "agent"))
+        open(os.path.join(d, ".perflink-install"), "w").close()
+        return su, su.SelfUpdate("1.26", d, "NirabhraKoley/PerfLink", notify=None, enabled=False)
+
+    def test_opens_powershell_via_explorer(self):
+        su, u = self._u()
+        with mock.patch.object(su.subprocess, "Popen") as popen:
+            self.assertTrue(u.open_update_window())
+        args, kw = popen.call_args
+        self.assertEqual(args[0][0], "explorer.exe")       # Windows' shell starts it: not part of PerfLink
+        launcher = args[0][1]
+        text = open(launcher, encoding="ascii").read()
+        self.assertIn("powershell.exe -NoExit", text)       # the window stays open to read
+        self.assertIn("irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/install.ps1 | iex", text)
+        self.assertIn('cd /d "%USERPROFILE%"', text)        # not inside the install folder
+        self.assertNotIn("PerfLink", kw["cwd"].split(os.sep)[-1])
+
+    def test_falls_back_to_starting_powershell_directly(self):
+        su, u = self._u()
+        calls = []
+        def popen(args, creationflags=0, cwd=None):
+            calls.append((args[0], creationflags))
+            if args[0] == "explorer.exe" or creationflags & su.BREAKAWAY:
+                raise OSError("refused")
+        with mock.patch.object(su.subprocess, "Popen", side_effect=popen):
+            self.assertTrue(u.open_update_window())
+        self.assertEqual([c[0] for c in calls], ["explorer.exe", "powershell.exe", "powershell.exe"])
+        self.assertEqual(calls[-1][1], su.NEW_CONSOLE)
+
+    def test_schedule_script_targets_two_hours(self):
+        import self_update as su
+        self.assertIn("PT2H", su.SCHEDULE_PS)
+        self.assertIn("-Hours 2", su.SCHEDULE_PS)
+        self.assertIn("'PerfLink Update'", su.SCHEDULE_PS)
+
+
 if __name__ == "__main__":
     unittest.main()

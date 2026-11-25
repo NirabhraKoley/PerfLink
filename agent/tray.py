@@ -29,6 +29,7 @@ class Tray:
         self.on_quit = on_quit
         self.version = version             # shown in the menu header: "PerfLink 1.22"
         self.on_check_update = None        # set by the agent (installed copies): check GitHub now
+        self.on_update_now = None          # set by the agent: open PowerShell and run the install command
         self.get_devices = None            # set by the agent: {"allowed": {id: {...}}, "blocked": {...}}
         self.on_unblock = None             # (id) -> None
         self.on_forget = None              # (id) -> None
@@ -89,6 +90,8 @@ class Tray:
         auto = ToolStripMenuItem("Start with Windows")
         quit_item = ToolStripMenuItem("Quit PerfLink")
         update_item = ToolStripMenuItem("Check for updates")
+        update_now_item = ToolStripMenuItem("Update now (PowerShell)")
+        update_now_item.ToolTipText = "Opens PowerShell and runs the PerfLink install command"
         allowed_menu = ToolStripMenuItem("Allowed phones")
         blocked_menu = ToolStripMenuItem("Blocked phones")
         uninstaller = os.path.join(os.path.dirname(HERE), "uninstall.ps1")
@@ -146,6 +149,10 @@ class Tray:
                     it.Click += EventHandler(_click)
                     menu_item.DropDownItems.Add(it)
 
+        def _update_now(s, e):
+            if self.on_update_now:
+                threading.Thread(target=self.on_update_now, daemon=True).start()
+
         def _menu_opening(s, e):
             status_item.Text = self.status
             auto.Checked = autostart.is_enabled()
@@ -157,6 +164,7 @@ class Tray:
         quit_item.Click += EventHandler(_quit)
         uninstall_item.Click += EventHandler(_uninstall)
         update_item.Click += EventHandler(_check_update)
+        update_now_item.Click += EventHandler(_update_now)
         menu.Opening += _menu_opening  # CancelEventHandler, converted by pythonnet
         items = [header, status_item, ToolStripSeparator(), open_log, open_dir, auto, ToolStripSeparator(),
                  allowed_menu, blocked_menu, ToolStripSeparator()]
@@ -165,6 +173,7 @@ class Tray:
         if os.path.exists(uninstaller) and os.path.exists(os.path.join(root, ".perflink-install")) \
                 and not os.path.exists(os.path.join(root, ".git")):  # never on a source checkout
             items.append(update_item)
+            items.append(update_now_item)
             items.append(uninstall_item)
         items.append(quit_item)
         for item in items:
