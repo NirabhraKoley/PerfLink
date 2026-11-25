@@ -79,8 +79,6 @@ fun BluetoothPage(state: UiState) {
             return@Box
         }
         Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 22.dp)) {
-            Text("BLUETOOTH & NETWORK", color = Palette.dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                letterSpacing = 1.4.sp, modifier = Modifier.padding(start = DisconnectGap, bottom = 12.dp))
             Row(Modifier.fillMaxSize()) {
                 // ---------------- left: Bluetooth
                 BluetoothPanel(b, Modifier.weight(1f).fillMaxHeight())

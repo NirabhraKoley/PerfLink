@@ -74,8 +74,6 @@ fun WeatherPage(state: UiState) {
 @Composable
 private fun Header(d: WeatherDetail) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = DisconnectGap, end = HomeButtonGap)) {
-        Text("WEATHER", color = WxBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-        Spacer(Modifier.width(10.dp))
         Text("📍 " + listOfNotNull(d.now.place ?: d.now.city, d.country).joinToString(", "), color = Palette.text,
             fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false))
@@ -114,10 +112,10 @@ private fun ColumnScope.NowBlock(d: WeatherDetail) {
         "WIND" to (n.windKmh?.let { "${f0(it)} km/h ${d.windDir ?: ""}" } ?: "–") to d.gustKmh?.let { "gusts ${f0(it)} km/h" },
         "UV INDEX" to (d.uv?.let { f1(it) } ?: "–") to d.uv?.let { uvLabel(it) },
         "AIR QUALITY" to (d.aqi?.let { f0(it) } ?: "–") to (d.aqiLabel ?: d.pm25?.let { "PM2.5 ${f0(it)}" }),
-        "PRESSURE" to (d.pressureHpa?.let { "${f0(it)} hPa" } ?: "–") to d.cloudPct?.let { "clouds ${f0(it)}%" },
-        "VISIBILITY" to (d.visibilityKm?.let { "${f1(it)} km" } ?: "–") to n.rainPct?.let { "rain chance ${f0(it)}%" },
-        "SUNRISE" to (d.sunrise ?: "–") to null,
-        "SUNSET" to (d.sunset ?: "–") to null,
+        // 6 tiles (3 rows) so each has room for its 3 lines on any screen
+        "VISIBILITY" to (d.visibilityKm?.let { "${f1(it)} km" } ?: "–") to
+            listOfNotNull(d.pressureHpa?.let { "${f0(it)} hPa" }, n.rainPct?.let { "rain ${f0(it)}%" }).joinToString(" · ").ifBlank { null },
+        "SUN" to "↑ ${d.sunrise ?: "–"}  ↓ ${d.sunset ?: "–"}" to d.cloudPct?.let { "clouds ${f0(it)}%" },
     )
     Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         tiles.chunked(2).forEach { pair ->

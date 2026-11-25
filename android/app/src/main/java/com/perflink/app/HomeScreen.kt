@@ -93,14 +93,14 @@ fun HomePage(
             Brush.linearGradient(listOf(Color(0xFF0A0F12), Color(0xFF0C1A1B), Color(0xFF091012)))
         )
     ) {
-        Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 18.dp)) {
+        Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)) {
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 ClockBlock(state, s, Modifier.weight(1f).fillMaxHeight(), onOpenWeather) { settings = true }
                 Spacer(Modifier.width(20.dp))
                 MediaBlock(s.media, s.volume, state.art, onMedia, onVolume, onMute, Modifier.weight(1.05f).fillMaxHeight())
             }
-            Spacer(Modifier.height(10.dp))
-            StatRow(s, state.history, Modifier.fillMaxWidth().height(86.dp))
+            Spacer(Modifier.height(6.dp))
+            StatRow(s, state.history, Modifier.fillMaxWidth().height(84.dp))
         }
     }
     if (settings) SettingsDialog(s.weather, onDismiss = { settings = false },
@@ -117,7 +117,11 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
             delay(1000L - (System.currentTimeMillis() % 1000L))
         }
     }
+    // 12- or 24-hour clock: the switch left of the time, remembered on this phone
+    val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("perflink", 0)
+    var use24 by remember { mutableStateOf(prefs.getBoolean("clock_24h", false)) }
     val hour12 = (now.hour % 12).let { if (it == 0) 12 else it }
+    val hourText = if (use24) String.format(Locale.US, "%02d", now.hour) else "$hour12"
     val ampm = if (now.hour < 12) "AM" else "PM"
     val date = now.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault()))
 
@@ -163,11 +167,13 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
             val density = LocalDensity.current
             // Scale the clock to the space left (date + two weather lines take ~100dp below it)
             val clockSp = with(density) {
-                minOf((maxHeight - 100.dp) * 0.92f, maxWidth / 3.4f).coerceAtLeast(30.dp).toSp()
+                minOf((maxHeight - 104.dp) * 0.92f, (maxWidth - 70.dp) / 3.4f).coerceAtLeast(24.dp).toSp()
             }
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Text("$hour12", color = HomeColors.clock, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ClockFormatSwitch(use24) { use24 = it; prefs.edit().putBoolean("clock_24h", it).apply() }
+                    Spacer(Modifier.width(8.dp))
+                    Text(hourText, color = HomeColors.clock, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
                     Text(":", color = HomeColors.colon, fontSize = clockSp, fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
                     Text(String.format(Locale.US, "%02d", now.minute), color = HomeColors.clock, fontSize = clockSp,
                         fontWeight = FontWeight.ExtraLight, lineHeight = clockSp)
@@ -175,7 +181,7 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
                     Column(Modifier.padding(top = with(density) { (clockSp * 0.22f).toDp() })) {
                         Text(String.format(Locale.US, "%02d", now.second), color = HomeColors.colon,
                             fontSize = clockSp * 0.2f, fontWeight = FontWeight.Light)
-                        Text(ampm, color = Palette.dim, fontSize = clockSp * 0.17f, fontWeight = FontWeight.Medium)
+                        if (!use24) Text(ampm, color = Palette.dim, fontSize = clockSp * 0.17f, fontWeight = FontWeight.Medium)
                     }
                 }
                 Text(date, color = Palette.text, fontSize = 15.sp, fontWeight = FontWeight.Light)
@@ -303,6 +309,22 @@ private fun WaGlyph(size: Dp) {
             topLeft = Offset(r * 0.62f, r * 0.62f), size = Size(r * 0.76f, r * 0.76f), style = Stroke(width = r * 0.2f))
         drawCircle(WaGreen, radius = r * 0.13f, center = Offset(r * 0.78f, r * 0.72f))
         drawCircle(WaGreen, radius = r * 0.13f, center = Offset(r * 1.28f, r * 1.26f))
+    }
+}
+
+/** "12h | 24h" switch: two pills side by side, the active one lit. */
+@Composable
+private fun ClockFormatSwitch(use24: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x14FFFFFF)).padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        listOf(false to "12h", true to "24h").forEach { (v, label) ->
+            val on = use24 == v
+            Text(label, color = if (on) Color(0xFF0B1418) else Palette.dim, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (on) HomeColors.clock else Color.Transparent)
+                    .clickable { onChange(v) }.padding(horizontal = 5.dp, vertical = 2.dp))
+        }
     }
 }
 

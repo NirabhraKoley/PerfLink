@@ -4,6 +4,11 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.unit.Density
@@ -251,7 +256,12 @@ private const val DESIGN_MIN_WIDTH_DP = 600f
 // Page order, in one place (the page number is the position here; `-ei page N` opens page N):
 // Home, then using the PC (watch it, control it, quick actions), then gaming stats, then what's running
 // and streaming, then devices. Pages loop, so Weather (last) is one swipe left of Home and Mirror one right.
-enum class Page { Home, Mirror, Remote, Launcher, Performance, Overlay, Processes, Obs, Sessions, Bluetooth, Usb, Weather }
+enum class Page(val title: String, val color: Long) {
+    Home("HOME", 0xFF4FC3F7), Mirror("MIRROR", 0xFF4FC3F7), Remote("REMOTE", 0xFF7C9CFF), Launcher("LAUNCHER", 0xFFF2C14E),
+    Performance("PERFORMANCE", 0xFFFF7A59), Overlay("OVERLAY", 0xFFF2C14E), Processes("PROCESSES", 0xFFFF6FA8),
+    Obs("OBS STUDIO", 0xFFB57BFF), Sessions("SESSIONS", 0xFFFF9F5A), Bluetooth("BLUETOOTH & NETWORK", 0xFF5AA9FF),
+    Usb("USB", 0xFF4DD0E1), Weather("WEATHER", 0xFF6CB8FF),
+}
 
 private val PAGE_ORDER = Page.entries
 private val PAGES = PAGE_ORDER.size
@@ -276,8 +286,30 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
     val pager = rememberPagerState(initialPage = LOOP_START + startPage.coerceIn(0, PAGES - 1)) { LOOP_SLOTS }
     val current = pager.currentPage % PAGES
     val pageScope = rememberCoroutineScope()
-    Box(Modifier.fillMaxSize()) {
-        HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 0) { slot ->
+    // keep clear of camera holes / notches (punch-hole phones in landscape)
+    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout)) {
+      Column(Modifier.fillMaxSize()) {
+        // ---- top bar on every page: Disconnect · page name · Home
+        var askDisconnect by remember { mutableStateOf(false) }
+        TopBar(
+            page = PAGE_ORDER[current],
+            showHome = current != 0,
+            onDisconnect = { askDisconnect = true },
+            onHome = { pageScope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Home)) } },
+        )
+        if (askDisconnect) {
+            val st = state.stats
+            val who = st?.user?.let { "$it's ${if (st.kind.equals("Laptop", true)) "laptop" else "PC"}" } ?: st?.host ?: "the PC"
+            AlertDialog(
+                onDismissRequest = { askDisconnect = false },
+                containerColor = Palette.card,
+                title = { Text("Disconnect from $who?", color = Palette.text, fontSize = 17.sp) },
+                text = { Text("You can connect again from the list of PCs.", color = Palette.dim, fontSize = 13.sp) },
+                confirmButton = { TextButton(onClick = { askDisconnect = false; vm.disconnect() }) { Text("Disconnect", color = Palette.bad) } },
+                dismissButton = { TextButton(onClick = { askDisconnect = false }) { Text("Cancel") } },
+            )
+        }
+        HorizontalPager(pager, Modifier.fillMaxWidth().weight(1f), beyondViewportPageCount = 0) { slot ->
             val page = PAGE_ORDER[slot % PAGES]
             when {
                 state.stats == null -> Column(
@@ -313,34 +345,13 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 }
             }
         }
+      }
         // Only ask the PC for OBS preview frames while the OBS page is showing
         LaunchedEffect(current) { vm.obsView(PAGE_ORDER[current] == Page.Obs) }
         // Home button, top-right, on every page except Home itself.
         // Goes to the nearest Home slot (forward or back), so it never scrolls more than half the loop.
-        // The slide runs in the Dashboard's scope, not one belonging to the button: the button disappears as
-        // soon as the pager is more than halfway to Home, and that would cancel the slide midway.
-        if (current != 0 && state.stats != null) {
-            HomeButton(Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 8.dp)) {
-                pageScope.launch { pager.animateScrollToPage(nearestSlot(pager.currentPage, Page.Home)) }
-            }
-        }
-        // Disconnect button, top-left, on every page (asks first)
-        if (state.stats != null) {
-            var ask by remember { mutableStateOf(false) }
-            DisconnectButton(Modifier.align(Alignment.TopStart).padding(top = 6.dp, start = 8.dp)) { ask = true }
-            if (ask) {
-                val who = state.stats.user?.let { "$it's ${state.stats.kind?.let { k -> if (k.equals("Laptop", true)) "laptop" else "PC" } ?: "PC"}" }
-                    ?: state.stats.host ?: "the PC"
-                AlertDialog(
-                    onDismissRequest = { ask = false },
-                    containerColor = Palette.card,
-                    title = { Text("Disconnect from $who?", color = Palette.text, fontSize = 17.sp) },
-                    text = { Text("You can connect again from the list of PCs.", color = Palette.dim, fontSize = 13.sp) },
-                    confirmButton = { TextButton(onClick = { ask = false; vm.disconnect() }) { Text("Disconnect", color = Palette.bad) } },
-                    dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancel") } },
-                )
-            }
-        }
+        // (the Home slide runs in the Dashboard's scope: the button disappears halfway to Home, and a scope of
+        // its own would cancel the slide midway)
         // USB plug/unplug pop-up (shown on every page)
         state.usbAlert?.let { UsbAlertBanner(it, Modifier.align(Alignment.TopCenter).padding(top = 10.dp)) }
         // Page dots
@@ -350,7 +361,10 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
         ) {
             repeat(PAGES) { i ->
                 val active = current == i
-                Box(
+                if (i == 0) {   // Home: a small house instead of a dot
+                    Image(rememberVectorPainter(lineIcon(HOME_ICON)), contentDescription = "Home page", modifier = Modifier.size(10.dp),
+                        colorFilter = ColorFilter.tint(if (active) Palette.text else Palette.dim.copy(alpha = 0.7f)))
+                } else Box(
                     Modifier.height(5.dp).width(if (active) 16.dp else 5.dp).clip(RoundedCornerShape(50))
                         .background(if (active) Palette.text.copy(alpha = 0.8f) else Palette.dim.copy(alpha = 0.45f))
                 )
@@ -363,9 +377,9 @@ private const val HOME_ICON = "M3.5 11L12 4l8.5 7 M6 9.5V20h4.5v-5.5h3V20H18V9.5
 
 /** Small round house button that jumps back to the Home page. */
 @Composable
-fun HomeButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun HomeButton(modifier: Modifier = Modifier.size(34.dp), onClick: () -> Unit) {
     Box(
-        modifier.size(34.dp).clip(CircleShape).background(Color(0xCC1A222C))
+        modifier.clip(CircleShape).background(Color(0xCC1A222C))
             .border(1.dp, Color(0x33FFFFFF), CircleShape).clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -374,19 +388,40 @@ fun HomeButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
     }
 }
 
-/** Space each page leaves at its top-right so its own controls aren't hidden under the Home button. */
-val HomeButtonGap = 44.dp
+/** The bar at the top of every page: Disconnect (left), the page's name, Home (right). */
+@Composable
+fun TopBar(page: Page, showHome: Boolean, onDisconnect: () -> Unit, onHome: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(TopBarHeight).background(Color(0xFF080B10))
+            .drawBehind { drawLine(Color(0x14FFFFFF), Offset(0f, size.height - 1f), Offset(size.width, size.height - 1f), 1f) }
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DisconnectButton(Modifier.size(30.dp), onClick = onDisconnect)
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.size(6.dp).clip(CircleShape).background(Color(page.color)))
+        Spacer(Modifier.width(8.dp))
+        Text(page.title, color = Color(page.color), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp,
+            maxLines = 1, modifier = Modifier.weight(1f))
+        if (showHome) HomeButton(Modifier.size(30.dp), onClick = onHome) else Spacer(Modifier.size(30.dp))
+    }
+}
+
+val TopBarHeight = 36.dp
+
+/** Pages used to leave room for floating buttons; the buttons are in the top bar now. */
+val HomeButtonGap = 16.dp
 
 /** Space each page's top-left title leaves for the Disconnect button (on top of the page's own padding). */
-val DisconnectGap = 30.dp
+val DisconnectGap = 0.dp
 
 private const val POWER_ICON = "M12 3.5v8 M7 6.6a7.2 7.2 0 1 0 10 0"
 
 /** Small round power button that disconnects from the PC (after asking). */
 @Composable
-fun DisconnectButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun DisconnectButton(modifier: Modifier = Modifier.size(34.dp), onClick: () -> Unit) {
     Box(
-        modifier.size(34.dp).clip(CircleShape).background(Color(0xCC1A222C))
+        modifier.clip(CircleShape).background(Color(0xCC1A222C))
             .border(1.dp, Palette.bad.copy(alpha = 0.45f), CircleShape).clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -400,23 +435,20 @@ fun StatsPage(state: UiState, compact: Boolean, onDisconnect: () -> Unit) {
     val s = state.stats
     Column(Modifier.fillMaxSize().padding(bottom = 10.dp)) {
         // Top bar
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp + DisconnectGap, top = 10.dp, bottom = 10.dp, end = HomeButtonGap + 8.dp),
+        // one line: "● DESKTOP-JCSV385 · Live" (the page's name is in the top bar)
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = HomeButtonGap),
             verticalAlignment = Alignment.CenterVertically) {
             val (dot, label) = when (state.conn) {
                 Conn.Connected -> Palette.good to "Live"
                 Conn.Connecting -> Palette.warn to "Connecting…"
                 else -> Palette.bad to "Reconnecting…"
             }
-            Box(Modifier.size(10.dp).clip(CircleShape).background(dot))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
             Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) {
-                Text(s?.host ?: state.target ?: "", color = Palette.text, fontWeight = FontWeight.SemiBold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (state.conn != Conn.Connected && state.error != null) "$label ${state.error}" else label,
-                    color = Palette.dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Text(if (compact) "OVERLAY" else "PERFORMANCE", color = Palette.dim, fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+            Text(s?.user ?: s?.host ?: state.target ?: "", color = Palette.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text("  ·  " + if (state.conn != Conn.Connected && state.error != null) "$label ${state.error}" else label,
+                color = Palette.dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (s == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -583,6 +615,10 @@ fun CpuCard(s: Stats, h: History) {
         KV("RAM", if (s.ram.usedMb != null && s.ram.totalMb != null) "${gb(s.ram.usedMb)} / ${gb(s.ram.totalMb)} (${pct(s.ram.util)})" else null)
         UsageBar(s.ram.util, Palette.cpu)
         s.ram.layout()?.let { KV("Modules", it) }   // how the memory is installed: 8 GB + 8 GB, or 16 GB
+        // then each stick on its own row: size, DDR type and the speed it actually runs at
+        s.ram.modules.forEachIndexed { i, m ->
+            KV("  RAM ${i + 1}", listOfNotNull("${m.gb} GB", m.type, m.mts?.let { "$it MT/s" }).joinToString(" · "))
+        }
         if (c.tempC == null) {
             Spacer(Modifier.height(6.dp))
             Text("Run the agent as Administrator for CPU temp/power.", color = Palette.dim, fontSize = 11.sp)

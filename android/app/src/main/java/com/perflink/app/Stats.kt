@@ -43,7 +43,9 @@ fun Ram.layout(): String? {
         channels == 4 -> "quad channel"
         else -> "$channels channels"
     }
-    return listOfNotNull(sizes, kind, chan).joinToString(" · ")
+    // type and speed are on each module's own row; the summary keeps them only if all modules agree
+    val sameKind = modules.map { it.type to it.mts }.toSet().size == 1
+    return listOfNotNull(sizes, kind.takeIf { sameKind }, chan).joinToString(" · ")
 }
 
 data class Net(

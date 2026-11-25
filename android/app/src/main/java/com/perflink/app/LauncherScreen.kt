@@ -93,7 +93,7 @@ fun LauncherPage(state: UiState, onAction: (String) -> Unit) {
         )
     ) {
         Column(
-            Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 46.dp, bottom = 24.dp),
+            Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             TILES.chunked(4).forEach { row ->

@@ -99,8 +99,6 @@ fun UsbPage(state: UiState) {
             // ---------------- left: the devices
             Column(Modifier.weight(2f).fillMaxHeight()) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = DisconnectGap, bottom = 10.dp)) {
-                    Text("USB", color = UsbCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                    Spacer(Modifier.width(10.dp))
                     Text("plugged into this PC", color = Palette.dim, fontSize = 12.sp)
                 }
                 LazyVerticalGrid(

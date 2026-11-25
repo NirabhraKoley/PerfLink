@@ -71,8 +71,6 @@ fun ProcessesPage(state: UiState) {
     ) {
         Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 20.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = DisconnectGap, bottom = 10.dp, end = HomeButtonGap - 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("PROCESSES", color = ProcPink, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                Spacer(Modifier.width(10.dp))
                 Text(
                     "Total CPU ${f0(s.cpu.util)}% · ${list?.totalProcesses ?: 0} processes · ${list?.totalApps ?: 0} apps · tap one for details",
                     color = Palette.dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,

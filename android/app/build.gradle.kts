@@ -12,8 +12,8 @@ android {
         applicationId = "com.perflink.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17
-        versionName = "1.16"
+        versionCode = 18
+        versionName = "1.17"
     }
 
     buildTypes {
@@ -42,4 +42,8 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")}
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // JVM unit tests (the real org.json: Android's copy is only a stub off-device)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+}
