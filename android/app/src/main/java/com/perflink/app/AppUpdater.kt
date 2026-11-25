@@ -29,7 +29,32 @@ object AppUpdater {
     private const val REPO = "NirabhraKoley/PerfLink"
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
 
-    data class Release(val version: String, val apkUrl: String)
+    /** [summary]: one line about what's new, shown in the "Update available" pop-up. */
+    data class Release(val version: String, val apkUrl: String, val summary: String = "")
+
+    /** A newer release the user hasn't decided on yet: MainActivity shows the "Update available" pop-up. */
+    val available = kotlinx.coroutines.flow.MutableStateFlow<Release?>(null)
+
+    /** "Later" was tapped for this version: don't ask again until the app is opened next time. */
+    @Volatile private var laterFor: String? = null
+
+    fun later(rel: Release) {
+        laterFor = rel.version
+        available.value = null
+    }
+
+    /**
+     * One line about the release for the pop-up: a hidden `<!-- summary: ... -->` line in the release notes,
+     * else the notes' first line of text (headings, bullets and **bold** marks removed).
+     */
+    fun summaryOf(body: String?): String {
+        val text = body ?: return ""
+        Regex("""<!--\s*summary:\s*(.+?)\s*-->""", RegexOption.IGNORE_CASE).find(text)?.let { return it.groupValues[1].trim() }
+        val line = text.lineSequence().map { it.trim() }
+            .firstOrNull { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("<!--") && !it.startsWith("```") } ?: return ""
+        return line.trimStart('-', '*', ' ').replace("**", "").replace("`", "").replace(Regex("""\[([^\]]+)]\([^)]*\)"""), "$1")
+            .trim().let { if (it.length > 140) it.take(137).trimEnd() + "…" else it }
+    }
 
     fun versionParts(v: String?): List<Int> = Regex("""\d+""").findAll(v ?: "").map { it.value.toInt() }.toList()
 
@@ -54,7 +79,7 @@ object AppUpdater {
             val a = assets.getJSONObject(i)
             if (a.optString("name").equals("PerfLink.apk", ignoreCase = true)) url = a.optString("browser_download_url")
         }
-        if (tag.isNotBlank() && !url.isNullOrBlank()) Release(tag, url) else null
+        if (tag.isNotBlank() && !url.isNullOrBlank()) Release(tag, url, summaryOf(o.optString("body"))) else null
     } catch (e: Exception) {
         null
     }
@@ -67,10 +92,12 @@ object AppUpdater {
     /** Testing only: `--es update_api http://127.0.0.1:PORT/latest.json` checks a local test server instead of GitHub. */
     @Volatile var testApi: String? = null
 
-    /** Checks GitHub and installs a newer version if there is one. Returns a short status for the log / UI. */
+    /**
+     * Checks GitHub. A newer version isn't installed straight away: it goes to [available], and the app asks
+     * first ("Update available" pop-up with a line about what's new: Update now / Later).
+     */
     suspend fun checkAndUpdate(ctx: Context, manual: Boolean = false): String = withContext(Dispatchers.IO) {
         if (busy) return@withContext "already updating"
-        busy = true
         val result = try {
             val app = ctx.applicationContext
             val local = installedVersion(app)
@@ -83,6 +110,25 @@ object AppUpdater {
                 if (manual) toast(app, "PerfLink $local is up to date")
                 return@withContext "up to date ($local)"
             }
+            if (!manual && laterFor == rel.version) return@withContext "update ${rel.version}: asked, later"
+            available.value = rel
+            "update ${rel.version} available: asking"
+        } catch (e: Exception) {
+            Log.w(TAG, "update check failed", e)
+            "failed: ${e.message}"
+        }
+        Log.w(TAG, "update check: $result")   // (w: MIUI hides info lines from apps)
+        result
+    }
+
+    /** "Update now": download the release and install it. */
+    suspend fun install(ctx: Context, rel: Release): String = withContext(Dispatchers.IO) {
+        if (busy) return@withContext "already updating"
+        busy = true
+        available.value = null
+        val result = try {
+            val app = ctx.applicationContext
+            val local = installedVersion(app)
             toast(app, "Downloading PerfLink ${rel.version}…")
             val dir = File(app.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
             val apk = File(dir, "PerfLink-${rel.version}.apk")

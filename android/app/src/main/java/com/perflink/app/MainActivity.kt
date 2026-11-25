@@ -152,6 +152,9 @@ class MainActivity : ComponentActivity() {
                         ConnectScreen(state, vm::discover, vm::connect)
                     }
                     else Dashboard(state, vm, startPage)
+                    // a newer PerfLink is on GitHub: ask before updating, with a line about what's new
+                    val update by AppUpdater.available.collectAsStateWithLifecycle()
+                    update?.let { rel -> UpdateDialog(rel) }
                     // Watermark, bottom-right on every screen (plain text, so taps pass through)
                     Text(
                         "- created by Nirabhra Koley", color = Palette.dim.copy(alpha = 0.55f), fontSize = 10.sp,
@@ -170,6 +173,34 @@ class MainActivity : ComponentActivity() {
 }
 
 // =============================================================================== Connect
+@Composable
+private fun UpdateDialog(rel: AppUpdater.Release) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val have = remember { runCatching { AppUpdater.installedVersion(ctx) }.getOrDefault("") }
+    AlertDialog(
+        onDismissRequest = { AppUpdater.later(rel) },
+        containerColor = Palette.card,
+        title = { Text("Update available", color = Palette.text, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text("PerfLink ${rel.version}" + if (have.isNotBlank()) "  (you have $have)" else "",
+                    color = Palette.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                if (rel.summary.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(rel.summary, color = Palette.text, fontSize = 14.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { scope.launch { AppUpdater.install(ctx, rel) } }) {
+                Text("Update now", color = Palette.good, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = { AppUpdater.later(rel) }) { Text("Later", color = Palette.dim) } },
+    )
+}
+
 @Composable
 fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Unit) {
     var ip by rememberSaveable(state.lastIp) { mutableStateOf(state.lastIp) }
