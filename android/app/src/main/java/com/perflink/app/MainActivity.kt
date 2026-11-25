@@ -65,6 +65,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -123,6 +124,18 @@ class MainActivity : ComponentActivity() {
         startClockTab = intent?.getIntExtra("clock_tab", -1)?.takeIf { it in 0..2 }   // `--ei clock_tab 2`: Stopwatch
         startClockDigital = intent?.takeIf { it.hasExtra("clock_digital") }?.getBooleanExtra("clock_digital", false)
         startClockStyle = intent?.getIntExtra("clock_style", -1)?.takeIf { it in 0..4 }
+        // (testing) a local stand-in for GitHub's release API; only ever this phone itself
+        intent?.getStringExtra("update_api")?.takeIf { it.startsWith("http://127.0.0.1:") }?.let { AppUpdater.testApi = it }
+        // Updates itself from GitHub over the internet (no PC needed): shortly after opening, then every 6 hours
+        if (savedInstanceState == null && intent?.getBooleanExtra("no_update", false) != true) {
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(20_000)
+                while (true) {
+                    AppUpdater.checkAndUpdate(this@MainActivity)
+                    kotlinx.coroutines.delay(6 * 3600_000L)
+                }
+            }
+        }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Palette.accent, background = Palette.bg, surface = Palette.card)) {
               ScaledToScreen {

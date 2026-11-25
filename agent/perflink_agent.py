@@ -74,12 +74,13 @@ from usb_devices import UsbDevices
 from usb_tunnel import UsbTunnel
 from extras import Media, Volume, load_config, save_config
 from weather import Weather
+from self_update import SelfUpdate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.19"
+VERSION = "1.21"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -507,7 +508,7 @@ class Agent:
         n = len(self.clients)
         ip = self.net.local_ip or "?"
         phones = "no phone connected" if n == 0 else ("1 phone connected" if n == 1 else f"{n} phones connected")
-        self.tray.set_status(f"PC {ip} Â· {phones}", f"PerfLink Â· {phones}")
+        self.tray.set_status(f"PC {ip} · {phones}", f"PerfLink · {phones}")
         if connected_ip and n == 1 and time.monotonic() - self._last_connect_notice > 60:
             self._last_connect_notice = time.monotonic()
             where = "over USB" if connected_ip.startswith("127.") else f"from {connected_ip}"
@@ -695,6 +696,11 @@ async def main() -> None:
 
         agent.tray = Tray(on_quit=_quit)
         agent.update_tray()
+        # keeps this PC's PerfLink up to date from GitHub (installed copies only, never a source checkout)
+        agent.updater = SelfUpdate(VERSION, os.path.dirname(HERE), agent.config.get("repo"),
+                                   notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None,
+                                   enabled=agent.config.get("auto_update", True) is not False)
+        agent.tray.on_check_update = lambda: agent.updater.check_now(manual=True)
     # USB: re-creates the adb tunnel on replug, and installs/updates the phone app from the latest release
     if not args.no_usb:
         agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),

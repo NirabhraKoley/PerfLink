@@ -6,7 +6,7 @@ needs no extra packages. The tray runs its own STA thread with a message loop; t
 just updates `status` and calls `notify()`. A WinForms timer on the tray thread applies
 updates, so nothing touches UI objects from other threads.
 
-Menu: status · Open PerfLink log · Open PerfLink folder · Start with Windows (on/off) · Uninstall · Quit
+Menu: status · Open PerfLink log · Open PerfLink folder · Start with Windows (on/off) · Check for updates · Uninstall · Quit
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ LOG = os.path.join(HERE, "perflink.log")
 class Tray:
     def __init__(self, on_quit) -> None:
         self.on_quit = on_quit
+        self.on_check_update = None        # set by the agent (installed copies): check GitHub now
         self.status = "Starting…"          # shown in the menu header
         self.tooltip = "PerfLink"          # max 63 characters (Windows limit)
         self._pending: list[tuple[str, str]] = []  # balloons waiting for the UI thread
@@ -70,6 +71,7 @@ class Tray:
         open_dir = ToolStripMenuItem("Open PerfLink folder")
         auto = ToolStripMenuItem("Start with Windows")
         quit_item = ToolStripMenuItem("Quit PerfLink")
+        update_item = ToolStripMenuItem("Check for updates")
         uninstaller = os.path.join(os.path.dirname(HERE), "uninstall.ps1")
         uninstall_item = ToolStripMenuItem("Uninstall PerfLink…")
 
@@ -99,6 +101,10 @@ class Tray:
             subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
                               "-File", uninstaller], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
+        def _check_update(s, e):
+            if self.on_check_update:
+                threading.Thread(target=self.on_check_update, daemon=True).start()
+
         def _menu_opening(s, e):
             status_item.Text = self.status
             auto.Checked = autostart.is_enabled()
@@ -108,11 +114,13 @@ class Tray:
         auto.Click += EventHandler(_toggle_auto)
         quit_item.Click += EventHandler(_quit)
         uninstall_item.Click += EventHandler(_uninstall)
+        update_item.Click += EventHandler(_check_update)
         menu.Opening += _menu_opening  # CancelEventHandler, converted by pythonnet
         items = [header, status_item, ToolStripSeparator(), open_log, open_dir, auto, ToolStripSeparator()]
         root = os.path.dirname(HERE)
         if os.path.exists(uninstaller) and os.path.exists(os.path.join(root, ".perflink-install")) \
                 and not os.path.exists(os.path.join(root, ".git")):  # never on a source checkout
+            items.append(update_item)
             items.append(uninstall_item)
         items.append(quit_item)
         for item in items:

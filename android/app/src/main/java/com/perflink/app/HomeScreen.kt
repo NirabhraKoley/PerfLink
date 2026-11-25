@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -637,6 +638,14 @@ private fun SettingsDialog(
                     colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Palette.text, unfocusedTextColor = Palette.text),
                 )
                 Spacer(Modifier.height(12.dp))
+                // the app updates itself from GitHub; this checks right now
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
+                Text("PerfLink ${AppUpdater.installedVersion(ctx)} · Check for updates", color = Palette.accent,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable {
+                        scope.launch { AppUpdater.checkAndUpdate(ctx, manual = true) }
+                    }.padding(vertical = 6.dp))
                 Text("Disconnect from PC", color = Palette.bad, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onDisconnect() }.padding(vertical = 6.dp))
             }

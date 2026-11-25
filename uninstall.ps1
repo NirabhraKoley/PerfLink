@@ -52,6 +52,8 @@ Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'powershell.exe' -and
 Start-Sleep -Milliseconds 800
 # 2. start with Windows; firewall rules (shared) only when removing the registered install
 if ($ownTask) { Unregister-ScheduledTask -TaskName PerfLink -Confirm:$false }
+$updTask = Get-ScheduledTask -TaskName 'PerfLink Update'
+if ($updTask -and (Mine $updTask.Actions[0].Arguments)) { Unregister-ScheduledTask -TaskName 'PerfLink Update' -Confirm:$false }
 if ($ownReg -or -not $reg) { Remove-NetFirewallRule -DisplayName 'PerfLink TCP', 'PerfLink UDP' }
 # 3. shortcuts that start this install, and its Programs and Features entry
 $shell = New-Object -ComObject WScript.Shell

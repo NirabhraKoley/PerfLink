@@ -137,5 +137,60 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(self.a.RAM_MODULES, [{"gb": 16, "mts": None, "type": None, "slot": "A", "maker": None}])
 
 
+class SelfUpdateTests(unittest.TestCase):
+    def test_versions(self):
+        import self_update as su
+        self.assertEqual(su.parse_version(chr(10).join(['x = 1', 'VERSION = "1.20"'])), "1.20")
+        self.assertIsNone(su.parse_version("nothing here"))
+        self.assertTrue(su.is_newer("1.20", "1.19"))
+        self.assertTrue(su.is_newer("1.10", "1.9"))
+        self.assertFalse(su.is_newer("1.19", "1.19"))
+        self.assertFalse(su.is_newer(None, "1.19"))
+
+    def _app(self, installed=True, git=False):
+        import tempfile
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "agent"))
+        if installed:
+            open(os.path.join(d, ".perflink-install"), "w").close()
+        if git:
+            os.makedirs(os.path.join(d, ".git"))
+        return d
+
+    def test_checkout_never_updates(self):
+        import self_update as su
+        u = su.SelfUpdate("1.19", self._app(git=True), None, notify=None, first_check=999)
+        self.assertFalse(u.enabled)
+        self.assertEqual(u.check_now(), "Updates are only for installed copies")
+
+    def test_newer_version_starts_task_once(self):
+        import self_update as su
+        notes = []
+        u = su.SelfUpdate("1.19", self._app(), None, notify=lambda t, x: notes.append(x), enabled=False)
+        ok = types.SimpleNamespace(returncode=0)
+        with mock.patch.object(u, "fetch_latest", return_value="1.20"),                 mock.patch.object(su.subprocess, "run", return_value=ok) as run:
+            self.assertEqual(u.check_now(), "updating")
+            self.assertEqual(u.check_now(), "update already started")   # not again right away
+        self.assertEqual(run.call_count, 1)
+        self.assertIn("PerfLink Update", run.call_args[0][0])
+        self.assertTrue(any("1.20" in n for n in notes))
+
+    def test_up_to_date_and_offline(self):
+        import self_update as su
+        u = su.SelfUpdate("1.20", self._app(), None, notify=None, enabled=False)
+        with mock.patch.object(u, "fetch_latest", return_value="1.20"):
+            self.assertEqual(u.check_now(), "up to date")
+        with mock.patch.object(u, "fetch_latest", side_effect=OSError("offline")):
+            self.assertTrue(u.check_now().startswith("check failed"))
+
+    def test_announces_after_update(self):
+        import self_update as su
+        d = self._app()
+        su.SelfUpdate("1.19", d, None, notify=None, enabled=False)
+        notes = []
+        su.SelfUpdate("1.20", d, None, notify=lambda t, x: notes.append(x), enabled=False)
+        self.assertEqual(notes, ["Now running PerfLink 1.20"])
+
+
 if __name__ == "__main__":
     unittest.main()

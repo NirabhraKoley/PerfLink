@@ -65,7 +65,12 @@ That's it. Windows asks for administrator permission once (click **Yes**); then 
 
 **Phone app, automatically:** plug the phone into the PC with **USB debugging** allowed (once, in the phone's Developer options; on Xiaomi/Redmi also allow *Install via USB*). PerfLink then installs the app, and installs future updates by itself whenever the phone is plugged in.
 
-Run the same command again later to **update**; your settings are kept. A phone plugged in by USB is updated at the same time. If PerfLink's files on the PC are in use, the installer still updates the phone, keeps the current PC version running and asks you to restart the PC and run the command again.
+**Updates are automatic (1.21 and later), over the internet, no USB and no shared Wi-Fi needed:**
+- **PC:** PerfLink checks GitHub and installs a new version by itself, quietly in the background (no window, no prompt), within about 30 minutes, at sign-in and every 6 hours. The tray icon says when it's done. Tray menu → **Check for updates** checks right away.
+- **Phone:** the app checks GitHub when it opens and every 6 hours, downloads the new `PerfLink.apk` and installs it. The first time, Android asks you to allow *Install unknown apps* for PerfLink and to tap **Update**; after that (Android 12 and newer) it updates without asking. Settings (tap the PC name on Home) → **Check for updates** checks right away.
+- To turn PC auto-update off, add `"auto_update": false` to `%LOCALAPPDATA%\PerfLink\agent\config.json`. Its log is `%LOCALAPPDATA%\PerfLink-update.log`.
+
+You can also run the same command again any time to **update** by hand; your settings are kept. A phone plugged in by USB is updated at the same time. If PerfLink's files on the PC are in use, the installer still updates the phone, keeps the current PC version running and asks you to restart the PC and run the command again.
 
 **Update fails?** If the installer says the PerfLink folder *"doesn't look like a PerfLink install"* or that its files are *in use*, start fresh. First right-click the PerfLink tray icon and choose **Quit PerfLink**. Then delete the folder and run the install command again:
 
@@ -172,6 +177,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.21** | 26 Nov 2026 | **Automatic updates over the internet** for both the PC and the phone app, with no USB or shared Wi-Fi needed: the PC installs new versions from GitHub by itself (a *PerfLink Update* task, as administrator, no prompt), and the phone app downloads and installs new releases itself. *Check for updates* in the tray menu and the app's settings. Fixed a garbled "·" in the tray tooltip. |
 | **1.19** | 25 Nov 2026 | **Clock page** (one swipe right of Mirror, works without the PC): analog or digital clock in five designs each (including old-school Vintage and Nixie), with a matching month calendar, a timer that rings and vibrates, and a stopwatch with laps. |
 | **1.18** | 25 Nov 2026 | Bigger Home clock that fills its space, with a slim 12h / 24h switch to its left. The date shows the year. RAM modules on Performance as a tidy table (`RAM 1 │ 8 GB │ DDR4 │ 2666 MT/s`). |
 | **1.17** | 25 Nov 2026 | A top bar on every page with the page name, Disconnect (left) and Home (right). The first page dot is a home icon. Each RAM stick on its own row with size, DDR type and speed. 12h / 24h clock switch. Layouts checked on 16:9, 20:9 and 4:3 screens and kept clear of camera cut-outs. Unit tests for the PC agent and the app. |

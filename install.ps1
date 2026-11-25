@@ -12,6 +12,7 @@
 #      in the background with an icon in the system tray
 #   6. Adds "PerfLink" to the Start menu and desktop
 #   7. Installs/updates the phone app on any phone plugged in with USB debugging allowed
+#   8. Keeps itself up to date: a "PerfLink Update" task installs new versions from GitHub by itself
 param(
     [switch]$Uninstall,
     [string]$Repo = 'NirabhraKoley/PerfLink',   # <-- your GitHub "user/repo"
@@ -21,7 +22,8 @@ param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'PerfLink'),
     [string]$ForUser = "$env:USERDOMAIN\$env:USERNAME",
     [switch]$SkipFirewall, [switch]$SkipShortcuts, [switch]$SkipAutostart, [switch]$NoStart, [switch]$NoAdb,
-    [switch]$Elevated                            # internal: set when re-launched as administrator
+    [switch]$Elevated,                           # internal: set when re-launched as administrator
+    [switch]$Auto                                # internal: quiet update run by the "PerfLink Update" task
 )
 
 $ErrorActionPreference = 'Stop'
@@ -102,6 +104,7 @@ function Stop-Agent {
 if ($Repo -notmatch '^[\w.-]+/[\w.-]+$' -and -not $From) { throw "install.ps1: -Repo must look like 'user/repo' (got '$Repo')." }
 
 # ------------------------------------------------------------------ run as administrator (one prompt)
+if ($Auto -and -not (Is-Admin)) { Write-Host 'Auto-update needs administrator rights (the PerfLink Update task has them).'; return }
 if (-not (Is-Admin)) {
     Write-Host 'PerfLink installer: Windows will ask for administrator permission - click Yes.' -ForegroundColor White
     $self = Join-Path $env:TEMP 'perflink-install.ps1'
@@ -119,7 +122,7 @@ if (-not (Is-Admin)) {
 }
 
 # keep the window open at the end when we were re-launched in a new elevated window
-function Finish { if ($Elevated) { Write-Host ''; Read-Host 'Press Enter to close' | Out-Null } }
+function Finish { if ($Elevated -and -not $Auto) { Write-Host ''; Read-Host 'Press Enter to close' | Out-Null } }
 
 # ------------------------------------------------------------------ uninstall
 if ($Uninstall) {
@@ -319,6 +322,24 @@ if ($pcKept) {
         Register-ScheduledTask -TaskName PerfLink -Action $a -Trigger $t -Principal $p -Settings $s `
             -Description 'PerfLink: PC stats on your phone (tray icon)' -Force | Out-Null
         Done "Starts automatically when $ForUser signs in (as administrator, no prompt)"
+
+        # Auto-update: checks GitHub at sign-in, every 6 hours, and when PerfLink sees a new version
+        # (it starts this task); installs it quietly, as administrator, no prompt. (Not re-registered
+        # while it is the one running this update.)
+        if (-not $Auto -or -not (Get-ScheduledTask -TaskName 'PerfLink Update' -ErrorAction SilentlyContinue)) {
+            $upd = Join-Path $App 'agent\auto_update.ps1'
+            $ua = New-ScheduledTaskAction -Execute 'powershell.exe' -WorkingDirectory $env:TEMP `
+                    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$upd`" -Repo $Repo -Branch $Branch"
+            $ut1 = New-ScheduledTaskTrigger -AtLogOn -User $ForUser
+            $ut1.Delay = 'PT3M'
+            $ut2 = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date.AddHours(1)) -RepetitionInterval (New-TimeSpan -Hours 6) `
+                    -RepetitionDuration (New-TimeSpan -Days 3650)
+            $us = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+                    -RunOnlyIfNetworkAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
+            Register-ScheduledTask -TaskName 'PerfLink Update' -Action $ua -Trigger @($ut1, $ut2) -Principal $p -Settings $us `
+                -Description 'PerfLink: installs new versions from GitHub by itself' -Force | Out-Null
+            Done 'Updates itself from GitHub (at sign-in and every 6 hours)'
+        }
     }
 
     # ------------------------------------------------------------------ 6. shortcuts
