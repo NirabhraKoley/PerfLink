@@ -420,6 +420,12 @@ function Update-PhoneApp {
     Step 'Phone app (USB)'
     $script:adb = Find-Adb
     if ($NoAdb -or -not $script:adb) { Done "adb isn't available - install the app on the phone from $apkUrl"; return }
+    # Start adb's background server first, WITHOUT capturing its output: a server started by a
+    # captured `adb devices` keeps that output pipe open, and the installer would wait forever.
+    try {
+        $srv = Start-Process -FilePath $script:adb -ArgumentList 'start-server' -WindowStyle Hidden -PassThru
+        [void]$srv.WaitForExit(20000)
+    } catch { }
     $ph = Get-Phones
     if ($ph.Waiting.Count -and -not $ph.Ready.Count) {
         Warn "On the phone, tap 'Allow' on the 'Allow USB debugging?' pop-up (tick 'Always allow')..."
@@ -472,7 +478,9 @@ function Update-PhoneApp {
     }
     if ($apk) { Remove-Item $apk -Force -ErrorAction SilentlyContinue }
 }
-Update-PhoneApp
+# (auto-update skips this: the phone app updates itself from GitHub, and the running PerfLink
+#  updates a phone plugged in by USB; adb here could also start a server that holds this run open)
+if ($Auto) { Step 'Phone app'; Done 'Skipped during auto-update (the phone app updates itself)' } else { Update-PhoneApp }
 
 # ------------------------------------------------------------------ 8. start
 if (-not $NoStart) {
