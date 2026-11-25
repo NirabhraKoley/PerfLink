@@ -192,5 +192,45 @@ class SelfUpdateTests(unittest.TestCase):
         self.assertEqual(notes, ["Now running PerfLink 1.20"])
 
 
+class DevicesTests(unittest.TestCase):
+    def _devices(self):
+        import devices as dv
+        saves = []
+        cfg = {}
+        return dv, dv.Devices(cfg, lambda c: saves.append(dict(c))), saves, cfg
+
+    def test_ids_and_names(self):
+        import devices as dv
+        self.assertEqual(dv.device_id({"id": "abc"}, "1.2.3.4"), "abc")
+        self.assertEqual(dv.device_id(None, "1.2.3.4"), "ip:1.2.3.4")        # older app: by IP
+        self.assertEqual(dv.device_name({"name": "Redmi Note 5"}, "x"), "Redmi Note 5")
+        self.assertEqual(dv.device_name({}, "1.2.3.4"), "Phone at 1.2.3.4")
+
+    def test_allow_block_unblock_forget(self):
+        dv, d, saves, cfg = self._devices()
+        self.assertEqual(d.status("p1"), dv.UNKNOWN)
+        d.allow("p1", "Redmi", "192.168.1.4")
+        self.assertEqual(d.status("p1"), dv.ALLOWED)
+        d.block("p1", "Redmi", "192.168.1.4")                    # block wins and leaves the allow list
+        self.assertEqual(d.status("p1"), dv.BLOCKED)
+        self.assertNotIn("p1", d.allowed)
+        d.unblock("p1")
+        self.assertEqual(d.status("p1"), dv.UNKNOWN)             # asked again next time
+        d.allow("p1", "Redmi", "192.168.1.4"); d.forget("p1")
+        self.assertEqual(d.status("p1"), dv.UNKNOWN)
+        self.assertIn("devices", cfg)                            # stored in config.json
+        self.assertTrue(saves)
+
+    def test_seen_updates_ip_only_when_changed(self):
+        dv, d, saves, cfg = self._devices()
+        d.allow("p1", "Redmi", "192.168.1.4")
+        n = len(saves)
+        d.seen("p1", "192.168.1.4")
+        self.assertEqual(len(saves), n)                           # same IP: nothing written
+        d.seen("p1", "192.168.1.9")
+        self.assertEqual(d.allowed["p1"]["ip"], "192.168.1.9")
+        self.assertEqual(len(saves), n + 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -75,12 +75,13 @@ from usb_tunnel import UsbTunnel
 from extras import Media, Volume, load_config, save_config
 from weather import Weather
 from self_update import SelfUpdate
+from devices import ALLOWED, BLOCKED, Devices, device_id, device_name
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.23"
+VERSION = "1.24"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -397,6 +398,11 @@ class Agent:
         self.whatsapp = WhatsAppNotifications()
         self.mirror = Mirror()  # screen + sound to the phone's Mirror page (idle until asked)
         self.obs_viewers: set = set()  # phones currently showing the OBS page (get previews)
+        # phones allowed / blocked over Wi-Fi (a new one needs the user's OK in a pop-up first)
+        self.devices = Devices(self.config, save_config)
+        self._asking: dict = {}         # device id -> future with the pop-up's answer (one pop-up per phone)
+        self._cooldown: dict = {}       # device id -> time: no answer, don't ask again for a minute
+        self.conn_ids: dict = {}        # websocket -> device id
         self._last_preview: str | None = None
 
     def _art_msg(self) -> str:
@@ -514,7 +520,101 @@ class Agent:
             where = "over USB" if connected_ip.startswith("127.") else f"from {connected_ip}"
             self.tray.notify("PerfLink", f"Phone connected {where}")
 
+    # ---------------------------------------------------------------- who may connect
+    async def _approve(self, ws, ip: str) -> bool:
+        """Phones on USB are plugged into this PC: always fine. Over Wi-Fi a phone must be on the allow
+        list, or the user allows it in a pop-up now; blocked phones are refused."""
+        if ip in ("127.0.0.1", "::1", "localhost"):
+            return True
+        hello = None
+        try:   # the app says who it is first (older apps don't: then it's known by its IP)
+            raw = await asyncio.wait_for(ws.recv(), 3)
+            msg = json.loads(raw) if isinstance(raw, str) else {}
+            if isinstance(msg, dict) and msg.get("cmd") == "hello":
+                hello = msg
+        except (asyncio.TimeoutError, ValueError):
+            pass
+        except websockets.ConnectionClosed:
+            return False
+        did, name = device_id(hello, ip), device_name(hello, ip)
+        self.conn_ids[ws] = did
+        status = self.devices.status(did)
+        if status == BLOCKED:
+            print(f"[auth] refused blocked phone {name} ({ip})")
+            await self._refuse(ws, "blocked")
+            return False
+        if status == ALLOWED:
+            self.devices.seen(did, ip)
+            return True
+        if self.tray is None or not self.tray.ok:   # console / test run: nobody to ask
+            print(f"[auth] {name} ({ip}) connected (no tray to ask; not remembered)")
+            return True
+        if time.time() - self._cooldown.get(did, 0) < 60:   # just asked and nobody answered
+            await self._refuse(ws, "not_allowed")
+            return False
+        print(f"[auth] asking about {name} ({ip})")
+        loop = asyncio.get_running_loop()
+        fut = self._asking.get(did)
+        if fut is None:
+            fut = loop.create_future()
+            self._asking[did] = fut
+
+            def answer(value, fut=fut):
+                loop.call_soon_threadsafe(lambda: fut.done() or fut.set_result(value))
+            if not self.tray.ask(name, ip, answer):
+                fut.set_result("allow")
+        try:
+            end = time.time() + 75
+            while not fut.done() and time.time() < end:
+                # tell the phone it's waiting (also keeps its "no data" watchdog quiet)
+                await ws.send(json.dumps({"type": "auth", "status": "pending", "pc": socket.gethostname()}))
+                try:
+                    await asyncio.wait_for(asyncio.shield(fut), 3)
+                except asyncio.TimeoutError:
+                    pass
+        except websockets.ConnectionClosed:
+            return False
+        finally:
+            if fut.done():
+                self._asking.pop(did, None)
+        result = fut.result() if fut.done() else None
+        if result == "allow":
+            self.devices.allow(did, name, ip)
+            print(f"[auth] allowed {name} ({ip})")
+            try:
+                await ws.send(json.dumps({"type": "auth", "status": "allowed"}))
+            except websockets.ConnectionClosed:
+                return False
+            return True
+        if result == "block":
+            self.devices.block(did, name, ip)
+            print(f"[auth] blocked {name} ({ip})")
+            await self._refuse(ws, "blocked")
+            return False
+        self._cooldown[did] = time.time()
+        print(f"[auth] {name} ({ip}) not allowed (no answer)")
+        await self._refuse(ws, "not_allowed")
+        return False
+
+    async def _refuse(self, ws, status: str) -> None:
+        try:
+            await ws.send(json.dumps({"type": "auth", "status": status, "pc": socket.gethostname()}))
+            await ws.close(4003, status)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def drop_device(self, did: str) -> None:
+        """Forgotten on the PC: hang up on that phone now (it is asked about again when it reconnects)."""
+        for ws, d in list(self.conn_ids.items()):
+            if d == did and self.loop:
+                self.loop.call_soon_threadsafe(lambda ws=ws: asyncio.ensure_future(ws.close(4003, "forgotten")))
+
+    loop = None
+
     async def handler(self, ws) -> None:
+        if not await self._approve(ws, ws.remote_address[0]):
+            self.conn_ids.pop(ws, None)
+            return
         self.clients.add(ws)
         print(f"[+] phone connected: {ws.remote_address[0]}  ({len(self.clients)} client(s))")
         self.update_tray(connected_ip=ws.remote_address[0])
@@ -573,6 +673,7 @@ class Agent:
             pass
         finally:
             self.clients.discard(ws)
+            self.conn_ids.pop(ws, None)
             self.mirror.drop(ws)
             self.obs_viewers.discard(ws)
             self.obs.preview_wanted = bool(self.obs_viewers)
@@ -701,6 +802,14 @@ async def main() -> None:
                                    notify=lambda title, text: agent.tray.notify(title, text) if agent.tray else None,
                                    enabled=agent.config.get("auto_update", True) is not False)
         agent.tray.on_check_update = lambda: agent.updater.check_now(manual=True)
+        # tray menu: Allowed phones / Blocked phones
+        agent.tray.get_devices = agent.devices.listing
+        agent.tray.on_unblock = agent.devices.unblock
+
+        def _forget(did: str) -> None:
+            agent.devices.forget(did)
+            agent.drop_device(did)
+        agent.tray.on_forget = _forget
     # USB: re-creates the adb tunnel on replug, and installs/updates the phone app from the latest release
     if not args.no_usb:
         agent.tunnel = UsbTunnel(WS_PORT, repo=agent.config.get("repo"),
@@ -709,6 +818,7 @@ async def main() -> None:
                                                            for c in list(agent.clients)))
     loop = asyncio.get_running_loop()
     agent.mirror.loop = loop
+    agent.loop = loop
     obs_task = asyncio.create_task(agent.obs.run())  # noqa: F841  (kept alive for the agent's lifetime)
     await loop.create_datagram_endpoint(Discovery, local_addr=("0.0.0.0", DISCOVERY_PORT))
     async with websockets.serve(agent.handler, "0.0.0.0", WS_PORT, ping_interval=10):

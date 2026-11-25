@@ -65,6 +65,10 @@ data class UiState(
     val toast: Toast? = null,
     val obsPreview: ImageBitmap? = null,
     val usbAlert: UsbEvent? = null,
+    /** "pending": the PC is asking its user whether to allow this phone (Wi-Fi). */
+    val auth: String? = null,
+    /** Why the PC refused this phone (blocked, or not allowed), shown on the connect screen. */
+    val refused: String? = null,
 )
 
 data class Toast(val message: String, val ok: Boolean, val id: Long = System.nanoTime())
@@ -79,6 +83,16 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         .connectTimeout(4, TimeUnit.SECONDS)
         .build()
     private var socket: WebSocket? = null
+
+    /** This phone's ID for the PC's allow / block list (made once; stays the same when the IP changes). */
+    private val deviceId: String = prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString()
+        .also { prefs.edit().putString("device_id", it).apply() }
+    private val deviceName: String = listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+        .filter { !it.isNullOrBlank() }.joinToString(" ")
+        .let { n -> if (n.lowercase().startsWith("xiaomi xiaomi")) n.substring(7) else n }.ifBlank { "Android phone" }
+
+    private fun hello(): String = JSONObject().put("cmd", "hello").put("id", deviceId).put("name", deviceName)
+        .put("app", runCatching { AppUpdater.installedVersion(getApplication()) }.getOrDefault("")).toString()
     private var reconnectJob: Job? = null
     private var wantConnected = false
 
@@ -161,7 +175,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         if (isUsbUrl(url)) { usbUrl = url; wifiUrl = null } else { wifiUrl = url; usbUrl = null }
         _state.update {
             it.copy(conn = Conn.Connecting, target = url, error = null, lastIp = host,
-                history = History(), stats = null)
+                history = History(), stats = null, auth = null, refused = null)
         }
         open(url)
     }
@@ -233,6 +247,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (webSocket != socket) return
+                webSocket.send(hello())   // first: who this phone is (the PC may ask its user to allow it)
                 // `target` decides the USB / Wi-Fi label on Home: it's the way that is working now
                 _state.update { it.copy(conn = Conn.Connected, error = null, target = url) }
                 if (obsViewing) webSocket.send(JSONObject().put("cmd", "obs_view").put("on", true).toString())
@@ -256,6 +271,10 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (webSocket == socket) lastMessageAt = System.currentTimeMillis()
+                if (text.startsWith("{\"type\": \"auth\"")) {
+                    if (webSocket == socket) handleAuth(text)
+                    return
+                }
                 if (text.startsWith("{\"type\": \"art\"")) {
                     handleArt(text); return
                 }
@@ -277,7 +296,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val s = parseStats(text) ?: return
                 if (webSocket == socket) learnRoutes(url, s)
-                _state.update { it.copy(conn = Conn.Connected, stats = s, history = it.history.push(s)) }
+                _state.update { it.copy(conn = Conn.Connected, stats = s, history = it.history.push(s), auth = null) }
                 checkUsbEvents(s.usb)
                 checkBtEvents(s.bluetooth)
             }
@@ -292,6 +311,26 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
                 scheduleReconnect(url, "Connection closed")
             }
         })
+    }
+
+    /** The PC's answer about this phone: still asking its user, allowed, blocked or not allowed. */
+    private fun handleAuth(text: String) {
+        val o = runCatching { JSONObject(text) }.getOrNull() ?: return
+        val pc = o.optString("pc").ifBlank { "the PC" }
+        when (o.optString("status")) {
+            "pending" -> _state.update { it.copy(auth = "pending") }
+            "allowed" -> _state.update { it.copy(auth = null) }
+            "blocked", "not_allowed" -> {
+                val msg = if (o.optString("status") == "blocked")
+                    "$pc blocked this phone. To connect, unblock it on the PC: PerfLink tray icon → Blocked phones."
+                else "$pc didn't allow this phone. Connect again and click Allow in the window on the PC."
+                wantConnected = false
+                reconnectJob?.cancel()
+                socket?.close(1000, null)
+                socket = null
+                _state.update { it.copy(conn = Conn.Idle, stats = null, target = null, auth = null, refused = msg) }
+            }
+        }
     }
 
     private fun handleArt(text: String) {

@@ -180,6 +180,18 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
         Spacer(Modifier.height(12.dp))
         Text("PerfLink", color = Palette.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
         Text("Live FPS, GPU, CPU and network stats from your PC.", color = Palette.dim, fontSize = 15.sp)
+        // the PC refused this phone (blocked, or nobody clicked Allow)
+        state.refused?.let { why ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.bad.copy(alpha = 0.16f))
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("⛔", fontSize = 20.sp)
+                Spacer(Modifier.width(12.dp))
+                Text(why, color = Palette.text, fontSize = 13.sp)
+            }
+        }
 
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -350,11 +362,19 @@ fun Dashboard(state: UiState, vm: PerfViewModel, startPage: Int = 0) {
                 ) {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(16.dp))
+                    if (state.auth == "pending") {   // the PC's user is being asked: Allow / Block
+                        Text("Waiting for the PC to allow this phone", color = Palette.text, fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        Text("A window on the PC asks whether to allow this phone. Click Allow there.",
+                            color = Palette.dim, fontSize = 12.sp)
+                    } else {
                     Text(if (state.conn == Conn.Reconnecting) "Reconnecting to the PC…" else "Connecting to the PC…",
                         color = Palette.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Text("Make sure the PerfLink program is running on the PC. Retrying automatically.",
                         color = Palette.dim, fontSize = 12.sp)
+                    }
                     state.error?.let { Text(it, color = Palette.dim.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1) }
                     Spacer(Modifier.height(14.dp))
                     Chip("Choose another PC", Palette.accent) { vm.disconnect() }

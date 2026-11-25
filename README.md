@@ -177,6 +177,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.24** | 26 Nov 2026 | **Security: phones must be allowed.** When a phone connects over Wi-Fi for the first time, the PC shows *"<phone> wants to connect"* with **Allow** / **Block**; until then the phone gets nothing and can't control the PC. Decisions are remembered per phone (not per IP). Blocked phones are refused at once; the tray menu has **Allowed phones** and **Blocked phones** to forget or unblock one. Phones on USB are always trusted (they are plugged into the PC). |
 | **1.23** | 26 Nov 2026 | **USB ⇄ Wi-Fi switching:** pull the USB cable and the app moves to Wi-Fi by itself within about 10 s (Home shows *Wi-Fi*); plug it in again and it moves back to USB. Before, it kept saying *USB* and retrying the cable. |
 | **1.22** | 26 Nov 2026 | Shows the versions: the PC tray menu header says *PerfLink 1.22*, and Home shows the app version (e.g. *v1.22*) next to USB / Wi-Fi. |
 | **1.21** | 26 Nov 2026 | **Automatic updates over the internet** for both the PC and the phone app, with no USB or shared Wi-Fi needed: the PC installs new versions from GitHub by itself (a *PerfLink Update* task, as administrator, no prompt), and the phone app downloads and installs new releases itself. *Check for updates* in the tray menu and the app's settings. Fixed a garbled "·" in the tray tooltip. |
