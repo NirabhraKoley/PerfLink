@@ -22,8 +22,9 @@ LOG = os.path.join(HERE, "perflink.log")
 
 
 class Tray:
-    def __init__(self, on_quit) -> None:
+    def __init__(self, on_quit, version: str = "") -> None:
         self.on_quit = on_quit
+        self.version = version             # shown in the menu header: "PerfLink 1.22"
         self.on_check_update = None        # set by the agent (installed copies): check GitHub now
         self.status = "Starting…"          # shown in the menu header
         self.tooltip = "PerfLink"          # max 63 characters (Windows limit)
@@ -63,7 +64,7 @@ class Tray:
         icon.Text = "PerfLink"
         menu = ContextMenuStrip()
 
-        header = ToolStripMenuItem("PerfLink")
+        header = ToolStripMenuItem(f"PerfLink {self.version}".strip())
         header.Enabled = False
         status_item = ToolStripMenuItem(self.status)
         status_item.Enabled = False

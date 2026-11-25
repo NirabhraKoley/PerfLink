@@ -177,6 +177,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.22** | 26 Nov 2026 | Shows the versions: the PC tray menu header says *PerfLink 1.22*, and Home shows the app version (e.g. *v1.22*) next to USB / Wi-Fi. |
 | **1.21** | 26 Nov 2026 | **Automatic updates over the internet** for both the PC and the phone app, with no USB or shared Wi-Fi needed: the PC installs new versions from GitHub by itself (a *PerfLink Update* task, as administrator, no prompt), and the phone app downloads and installs new releases itself. *Check for updates* in the tray menu and the app's settings. Fixed a garbled "·" in the tray tooltip. |
 | **1.19** | 25 Nov 2026 | **Clock page** (one swipe right of Mirror, works without the PC): analog or digital clock in five designs each (including old-school Vintage and Nixie), with a matching month calendar, a timer that rings and vibrates, and a stopwatch with laps. |
 | **1.18** | 25 Nov 2026 | Bigger Home clock that fills its space, with a slim 12h / 24h switch to its left. The date shows the year. RAM modules on Performance as a tidy table (`RAM 1 │ 8 GB │ DDR4 │ 2666 MT/s`). |

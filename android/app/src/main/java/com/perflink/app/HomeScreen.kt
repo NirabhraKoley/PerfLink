@@ -150,13 +150,20 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
             }
             // This phone's battery (the app hides the phone's status bar)
             phoneBattery()?.let { (pct, charging) ->
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 BatteryChip("", pct, charging, null)
             }
             // how this phone reaches the PC: USB (the adb tunnel to 127.0.0.1) or Wi-Fi
             state.target?.let { url ->
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 LinkChip(usb = Regex("""//(127\.0\.0\.1|localhost)(:|/|$)""").containsMatchIn(url))
+            }
+            // this app's version (it updates itself from GitHub)
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val appVersion = remember { runCatching { AppUpdater.installedVersion(ctx) }.getOrNull() }
+            appVersion?.let {
+                Spacer(Modifier.width(10.dp))
+                Text("v$it", color = Palette.dim, fontSize = 11.sp, maxLines = 1)
             }
         }
         // WhatsApp messages from WhatsApp Desktop on the PC

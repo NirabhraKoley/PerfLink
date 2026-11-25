@@ -80,7 +80,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.21"
+VERSION = "1.22"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -694,7 +694,7 @@ async def main() -> None:
                 pass
             os._exit(0)
 
-        agent.tray = Tray(on_quit=_quit)
+        agent.tray = Tray(on_quit=_quit, version=VERSION)
         agent.update_tray()
         # keeps this PC's PerfLink up to date from GitHub (installed copies only, never a source checkout)
         agent.updater = SelfUpdate(VERSION, os.path.dirname(HERE), agent.config.get("repo"),
