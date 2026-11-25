@@ -79,7 +79,19 @@ function Get-BlockedNetworks($rules) {
         $profiles -match $cat -or $profiles -match 'Any'
     }
 }
+# Run a program and pass its output on as text. Its warnings (stderr, e.g. pip's "a new release of pip
+# is available") must not stop the installer: when the output is redirected (the auto-updater logs it),
+# Windows PowerShell turns every stderr line into an error, and with ErrorActionPreference=Stop that
+# aborted the update halfway and left PerfLink stopped. The exit code is in $LASTEXITCODE.
+function Invoke-Quiet([scriptblock]$cmd) {
+    $eap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $cmd 2>&1 | ForEach-Object { "$_" } }
+    finally { $ErrorActionPreference = $eap }
+}
+$script:agentStopped = $false
 function Stop-Agent {
+    $script:agentStopped = $true
     # (not schtasks.exe: under ErrorAction Stop its "task not found" message aborted the install)
     if (Get-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue) {
         Stop-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue
@@ -170,21 +182,21 @@ if (-not $py) {
         throw 'Python 3.10+ is needed and winget is not available. Install Python from https://www.python.org/downloads/ (tick "Add python.exe to PATH") and run this again.'
     }
     Write-Host '    Python not found - installing Python 3.12 with winget...'
-    winget install --id Python.Python.3.12 -e --scope user --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    Invoke-Quiet { winget install --id Python.Python.3.12 -e --scope user --silent --accept-package-agreements --accept-source-agreements } | Out-Null
     Refresh-Path
     $py = Find-Python
     if (-not $py) { throw 'Python was installed but is not on PATH yet. Close this window, open a new PowerShell and run the install command again.' }
 }
 # Pin ONE interpreter (full path) for everything: packages are installed into it and the
 # start-with-Windows task runs its pythonw.exe. ('py' and 'python' can be different Pythons.)
-$pyExe = (& $py -c "import sys; print(sys.executable)").Trim()
+$pyExe = ((Invoke-Quiet { & $py -c "import sys; print(sys.executable)" }) | Select-Object -Last 1).Trim()
 $pyw = Join-Path (Split-Path $pyExe) 'pythonw.exe'
 if (-not (Test-Path $pyw)) { $pyw = $pyExe }
-Done "Using $(& $pyExe --version) at $pyExe"
+Done "Using $(Invoke-Quiet { & $pyExe --version }) at $pyExe"
 
 if (-not $NoAdb -and -not (Get-Command adb -ErrorAction SilentlyContinue) -and (Get-Command winget -ErrorAction SilentlyContinue)) {
     Step 'Installing Android Platform Tools (adb) - lets PerfLink install the phone app over USB'
-    winget install --id Google.PlatformTools -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
+    Invoke-Quiet { winget install --id Google.PlatformTools -e --silent --accept-package-agreements --accept-source-agreements } | Out-Null
     Refresh-Path
     if (Get-Command adb -ErrorAction SilentlyContinue) { Done 'adb installed' } else { Warn 'adb not installed (optional - you can install the APK by hand)' }
 }
@@ -281,11 +293,11 @@ if ($pcKept) {
 
     # ------------------------------------------------------------------ 3. dependencies
     Step 'Installing dependencies (Python packages, PresentMon, LibreHardwareMonitor)'
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $App 'agent\setup.ps1') -Python $pyExe
+    Invoke-Quiet { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $App 'agent\setup.ps1') -Python $pyExe } | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Dependency setup failed (see the messages above).' }
     Set-Content (Join-Path $App 'agent\pythonw.txt') $pyw -Encoding ascii   # used by PerfLink.vbs
     # quick self-test: the chosen Python can load everything PerfLink needs
-    $imp = & $pyExe -c "import psutil, websockets, clr, pycaw; print('ok')" 2>&1
+    $imp = Invoke-Quiet { & $pyExe -c "import psutil, websockets, clr, pycaw; print('ok')" }
     if ("$imp" -notmatch 'ok') { throw "Python packages are missing in $pyExe : $imp" }
     Done 'Dependencies ready'
 
@@ -503,5 +515,10 @@ Write-Host '  PerfLink now starts with Windows. Right-click its tray icon for op
 catch {
     Write-Host ''
     Write-Host "Installation failed: $($_.Exception.Message)" -ForegroundColor Red
+    # never leave PerfLink stopped: if this run stopped it, start it again (whatever version is there now)
+    if ($script:agentStopped -and -not $NoStart -and -not (Get-NetTCPConnection -LocalPort 47800 -State Listen -ErrorAction SilentlyContinue)) {
+        try { Start-ScheduledTask -TaskName PerfLink -ErrorAction Stop; Write-Host 'PerfLink was started again.' -ForegroundColor Yellow }
+        catch { Write-Host "Couldn't start PerfLink again: $($_.Exception.Message)" -ForegroundColor Yellow }
+    }
 }
 Finish

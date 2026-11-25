@@ -49,10 +49,18 @@ try {
     if ($CheckOnly) { return }
     $inst = Join-Path $env:TEMP 'perflink-autoupdate.ps1'
     Invoke-WebRequest "https://raw.githubusercontent.com/$Repo/$Branch/install.ps1" -OutFile $inst -UseBasicParsing -TimeoutSec 60
-    # same process (&), so the installer's "stop PerfLink's helpers" step never stops this script
-    & $inst -Elevated -Auto -Repo $Repo -Branch $Branch -InstallDir $App *>> $log
+    # same process (&), so the installer's "stop PerfLink's helpers" step never stops this script.
+    # Its output goes into the log as UTF-8 text (">>" would write UTF-16 into this UTF-8 log).
+    & $inst -Elevated -Auto -Repo $Repo -Branch $Branch -InstallDir $App *>&1 | ForEach-Object { "$_" } |
+        Out-File -FilePath $log -Append -Encoding utf8
     $now = Get-Version (Get-Content (Join-Path $App 'agent\perflink_agent.py') -Raw -Encoding utf8)
     Log $(if ($now -eq $new) { "updated to $now" } else { "update didn't finish (still $now) - see above" })
+    # safety net: PerfLink must be running afterwards, whatever happened above
+    Start-Sleep 5
+    if (-not (Get-NetTCPConnection -LocalPort 47800 -State Listen -ErrorAction SilentlyContinue)) {
+        try { Start-ScheduledTask -TaskName PerfLink -ErrorAction Stop; Log 'PerfLink was not running: started it again' }
+        catch { Log "PerfLink is not running and couldn't be started: $($_.Exception.Message)" }
+    }
 } catch {
     Log "failed: $($_.Exception.Message)"
 }
