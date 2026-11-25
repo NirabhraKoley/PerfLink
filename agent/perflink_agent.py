@@ -79,7 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.12"
+VERSION = "1.13"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -505,7 +505,7 @@ class Agent:
         n = len(self.clients)
         ip = self.net.local_ip or "?"
         phones = "no phone connected" if n == 0 else ("1 phone connected" if n == 1 else f"{n} phones connected")
-        self.tray.set_status(f"PC {ip} · {phones}", f"PerfLink · {phones}")
+        self.tray.set_status(f"PC {ip} Â· {phones}", f"PerfLink Â· {phones}")
         if connected_ip and n == 1 and time.monotonic() - self._last_connect_notice > 60:
             self._last_connect_notice = time.monotonic()
             where = "over USB" if connected_ip.startswith("127.") else f"from {connected_ip}"

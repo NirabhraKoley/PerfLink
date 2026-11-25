@@ -158,6 +158,7 @@ irm https://raw.githubusercontent.com/NirabhraKoley/PerfLink/main/diagnose.ps1 |
 | Problem | Fix |
 |---|---|
 | Phone doesn't find the PC | Same Wi-Fi? (Not mobile data or a guest network.) Firewall rules added? Type the PC's IP manually. |
+| Works over USB but not over Wi-Fi | Windows may be blocking Python on **Public** networks: when its *"Allow access?"* pop-up for Python was cancelled once, it adds block rules, and they beat PerfLink's firewall rules. On your home network: *Settings → Network & internet → Ethernet / Wi-Fi → Network profile type → **Private***. The installer and the quick check above warn about this. |
 | No PerfLink icon by the clock | Click the **^** arrow; new icons start hidden there. If it's not there either, run the quick check above. |
 | Stuck on "Connecting/Reconnecting to the PC…" | Is the PerfLink icon next to the clock? If not, start PerfLink from the desktop. Over USB: is the cable in and USB debugging allowed? The app retries every few seconds by itself. |
 | Phone app didn't install by itself | On a new PC the phone asks *"Allow USB debugging?"*: tap **Allow** (tick *Always allow*). Also check *Install via USB* on Xiaomi. Then unplug and replug the cable. Right-click the tray icon → *Open PerfLink log* to see why. |

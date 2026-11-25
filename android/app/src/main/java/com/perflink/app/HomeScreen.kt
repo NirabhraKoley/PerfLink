@@ -138,6 +138,11 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
                 Spacer(Modifier.width(12.dp))
                 BatteryChip("Phone", pct, charging, null)
             }
+            // how this phone reaches the PC: USB (the adb tunnel to 127.0.0.1) or Wi-Fi
+            state.target?.let { url ->
+                Spacer(Modifier.width(12.dp))
+                LinkChip(usb = Regex("""//(127\.0\.0\.1|localhost)(:|/|$)""").containsMatchIn(url))
+            }
         }
         // WhatsApp messages from WhatsApp Desktop on the PC
         s.whatsapp?.let { wa ->
@@ -617,6 +622,34 @@ private fun phoneBattery(): Pair<Int, Boolean>? {
         }
     }
     return state
+}
+
+/** "USB" with a plug or "Wi-Fi" with signal arcs: how the phone is connected to the PC. */
+@Composable
+private fun LinkChip(usb: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.width(13.dp).height(11.dp)) {
+            val c = Palette.dim
+            val st = 1.3.dp.toPx()
+            if (usb) {  // a plug: body, two prongs, cable
+                val w = size.width; val h = size.height
+                drawRoundRect(c, topLeft = Offset(w * 0.2f, h * 0.3f), size = Size(w * 0.6f, h * 0.42f),
+                    cornerRadius = CornerRadius(1.5.dp.toPx()))
+                drawLine(c, Offset(w * 0.38f, h * 0.3f), Offset(w * 0.38f, 0f), st)
+                drawLine(c, Offset(w * 0.62f, h * 0.3f), Offset(w * 0.62f, 0f), st)
+                drawLine(c, Offset(w * 0.5f, h * 0.72f), Offset(w * 0.5f, h), st)
+            } else {    // Wi-Fi: a dot and two arcs
+                val cx = size.width / 2; val bottom = size.height
+                drawCircle(c, radius = 1.4.dp.toPx(), center = Offset(cx, bottom - 1.4.dp.toPx()))
+                for (r in listOf(size.height * 0.55f, size.height * 0.95f)) {
+                    drawArc(c, startAngle = 225f, sweepAngle = 90f, useCenter = false,
+                        topLeft = Offset(cx - r, bottom - r), size = Size(r * 2, r * 2), style = Stroke(width = st))
+                }
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(if (usb) "USB" else "Wi-Fi", color = Palette.dim, fontSize = 11.sp, maxLines = 1)
+    }
 }
 
 @Composable

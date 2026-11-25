@@ -5,6 +5,29 @@ $ErrorActionPreference = 'SilentlyContinue'
 function H($t) { Write-Host "`n== $t" -ForegroundColor Cyan }
 function Row($k, $v, [bool]$ok = $true) { Write-Host ("  {0,-26} " -f $k) -NoNewline; Write-Host $v -ForegroundColor $(if ($ok) { 'Green' } else { 'Yellow' }) }
 
+# Windows "block" rules for these programs (inbound, enabled), e.g. left by a cancelled "Allow access?"
+# pop-up for Python. A block rule beats PerfLink's allow rules on that network type, so phones can't
+# connect over Wi-Fi (USB still works). Read with netsh, which works with or without admin rights.
+function Get-BlockRules([string[]]$programs) {
+    $want = @($programs | Where-Object { $_ } | ForEach-Object { $_.ToLower() })
+    $rules = @(); $cur = @{}
+    foreach ($l in (netsh advfirewall firewall show rule name=all dir=in verbose)) {
+        if ($l -match '^Rule Name:\s+(.*)') { $rules += , $cur; $cur = @{ Name = $matches[1].Trim() } }
+        elseif ($l -match '^(Enabled|Action|Profiles|Program):\s+(.*)') { $cur[$matches[1]] = $matches[2].Trim() }
+    }
+    $rules += , $cur
+    $rules | Where-Object { $_.Action -eq 'Block' -and $_.Enabled -eq 'Yes' -and $want -contains "$($_.Program)".ToLower() }
+}
+# the networks this PC is on whose type (Public / Private / Domain) those block rules cover
+function Get-BlockedNetworks($rules) {
+    $profiles = (@($rules) | ForEach-Object { $_.Profiles }) -join ','
+    if (-not $profiles) { return }
+    @(Get-NetConnectionProfile -ErrorAction SilentlyContinue) | Where-Object {
+        $cat = if ("$($_.NetworkCategory)" -like 'Domain*') { 'Domain' } else { "$($_.NetworkCategory)" }
+        $profiles -match $cat -or $profiles -match 'Any'
+    }
+}
+
 $App = Join-Path $env:LOCALAPPDATA 'PerfLink'
 H 'Install'
 $agentPy = Join-Path $App 'agent\perflink_agent.py'
@@ -67,9 +90,24 @@ try {
 } catch { Row 'Radios' "error: $_" $false }
 
 H 'Network'
-Row 'Firewall rules' $(if (Get-NetFirewallRule -DisplayName 'PerfLink*') { 'present' } else { 'missing' }) ([bool](Get-NetFirewallRule -DisplayName 'PerfLink*'))
+$fwOk = [bool]((netsh advfirewall firewall show rule name="PerfLink TCP") -match 'Enabled:\s+Yes')  # netsh: works with or without admin
+Row 'Firewall rules' $(if ($fwOk) { 'present' } else { 'missing' }) $fwOk
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -in 'Dhcp', 'Manual' -and $_.IPAddress -notlike '169.*' } | Select-Object -First 1).IPAddress
 Row 'PC IP' $ip
+foreach ($n in @(Get-NetConnectionProfile)) { Row "Network type ($($n.InterfaceAlias))" "$($n.NetworkCategory)" }
+# the Python PerfLink runs with (start-with-Windows task), and its console twin
+$pyRun = if ($task) { $task.Actions[0].Execute } else { Get-Content (Join-Path $App 'agent\pythonw.txt') -ErrorAction SilentlyContinue }
+$pyProgs = @($pyRun, $(if ($pyRun) { Join-Path (Split-Path $pyRun) 'python.exe' })) | Where-Object { $_ }
+$blockedRules = @(Get-BlockRules $pyProgs)
+$blockedNets = @(Get-BlockedNetworks $blockedRules)
+if ($blockedRules.Count -and $blockedNets.Count) {
+    Row 'Wi-Fi phones' "BLOCKED: Windows blocks Python on $($blockedNets[0].NetworkCategory) networks and this PC is on one" $false
+    Row '  fix (home network)' "Settings > Network & internet > $($blockedNets[0].InterfaceAlias) > Network profile type > Private" $false
+} elseif ($blockedRules.Count) {
+    Row 'Wi-Fi phones' "ok (Python is only blocked on $((@($blockedRules | ForEach-Object { $_.Profiles }) | Select-Object -Unique) -join '/') networks)"
+} else {
+    Row 'Wi-Fi phones' 'ok (nothing blocks PerfLink)'
+}
 
 H 'Python'
 foreach ($c in 'py', 'python') { $cmd = Get-Command $c; if ($cmd -and $cmd.Source -notlike '*WindowsApps*') { $py = $c; break } }

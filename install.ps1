@@ -55,6 +55,28 @@ function Find-Adb {
             @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Google.PlatformTools*\platform-tools\adb.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName)
     foreach ($p in $list) { if ($p -and (Test-Path $p)) { return $p } }
 }
+# Windows "block" rules for these programs (inbound, enabled), e.g. left by a cancelled "Allow access?"
+# pop-up for Python. A block rule beats PerfLink's allow rules on that network type, so phones can't
+# connect over Wi-Fi (USB still works). Read with netsh, which works with or without admin rights.
+function Get-BlockRules([string[]]$programs) {
+    $want = @($programs | Where-Object { $_ } | ForEach-Object { $_.ToLower() })
+    $rules = @(); $cur = @{}
+    foreach ($l in (netsh advfirewall firewall show rule name=all dir=in verbose)) {
+        if ($l -match '^Rule Name:\s+(.*)') { $rules += , $cur; $cur = @{ Name = $matches[1].Trim() } }
+        elseif ($l -match '^(Enabled|Action|Profiles|Program):\s+(.*)') { $cur[$matches[1]] = $matches[2].Trim() }
+    }
+    $rules += , $cur
+    $rules | Where-Object { $_.Action -eq 'Block' -and $_.Enabled -eq 'Yes' -and $want -contains "$($_.Program)".ToLower() }
+}
+# the networks this PC is on whose type (Public / Private / Domain) those block rules cover
+function Get-BlockedNetworks($rules) {
+    $profiles = (@($rules) | ForEach-Object { $_.Profiles }) -join ','
+    if (-not $profiles) { return }
+    @(Get-NetConnectionProfile -ErrorAction SilentlyContinue) | Where-Object {
+        $cat = if ("$($_.NetworkCategory)" -like 'Domain*') { 'Domain' } else { "$($_.NetworkCategory)" }
+        $profiles -match $cat -or $profiles -match 'Any'
+    }
+}
 function Stop-Agent {
     # (not schtasks.exe: under ErrorAction Stop its "task not found" message aborted the install)
     if (Get-ScheduledTask -TaskName PerfLink -ErrorAction SilentlyContinue) {
@@ -272,6 +294,16 @@ if ($pcKept) {
         New-NetFirewallRule -DisplayName 'PerfLink TCP' -Direction Inbound -Protocol TCP -LocalPort 47800 -Action Allow | Out-Null
         New-NetFirewallRule -DisplayName 'PerfLink UDP' -Direction Inbound -Protocol UDP -LocalPort 47801 -Action Allow | Out-Null
         Done 'Firewall rules added (TCP 47800, UDP 47801)'
+        $blockedRules = @(Get-BlockRules @($pyExe, $pyw))
+        $blockedNets = @(Get-BlockedNetworks $blockedRules)
+        if ($blockedRules.Count -and $blockedNets.Count) {
+            foreach ($n in $blockedNets) {
+                Warn "Windows blocks Python on '$($n.InterfaceAlias)' (a $($n.NetworkCategory) network), so phones can't connect over Wi-Fi (USB still works)."
+            }
+            Warn "Fix for a home network: Settings > Network & internet > $($blockedNets[0].InterfaceAlias) > Network profile type > Private."
+        } elseif ($blockedRules.Count) {
+            Done "(Windows blocks Python on $((@($blockedRules | ForEach-Object { $_.Profiles }) | Select-Object -Unique) -join '/') networks, not the type you're on now: Wi-Fi works here.)"
+        }
     }
 
     # ------------------------------------------------------------------ 5. start with Windows (tray)
