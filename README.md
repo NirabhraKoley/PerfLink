@@ -6,7 +6,7 @@
  PC (Windows)                                    Phone (Android)
  ┌────────────────────────────────┐  Wi-Fi/LAN   ┌──────────────────────────┐
  │ agent/perflink_agent.py        │ ───────────▶ │ PerfLink app             │
- │  PresentMon  → FPS, frame time │  WebSocket   │  9 swipeable pages       │
+ │  PresentMon  → FPS, frame time │  WebSocket   │  12 swipeable pages      │
  │  LibreHWMon  → GPU/CPU sensors │  :47800      │  auto-discovers the PC   │
  │  psutil      → CPU, RAM, net   │  UDP :47801  │  or connect over USB     │
  │  WinRT / OBS → media, OBS      │  (discovery) │                          │
@@ -15,11 +15,11 @@
 
 ## Pages
 
-Swipe left/right; the pages loop. A **Home** button sits top-right on every other page. The number in brackets is the page index (see [Open a specific page](#open-a-specific-page)).
+Swipe left/right; the pages loop. A bar at the top of every page shows its name, a **Disconnect** button (left) and a **Home** button (right). The number in brackets is the page index (see [Open a specific page](#open-a-specific-page)).
 
 | # | Page | What it shows |
 |---|---|---|
-| `[0]` | **Home** | 12-hour clock, date, phone battery %, WhatsApp messages and calls waiting on the PC (mirrored from WhatsApp Desktop's notifications; tap to see them), weather for the PC's location (tap it for the Weather page), PC media player (cover art, seek, play/pause/skip, volume, mute) and CPU / GPU / RAM / network tiles with sparklines. Tap the PC name for settings (weather city, disconnect). |
+| `[0]` | **Home** | Clock with a 12h / 24h switch, date and year, phone battery % and USB / Wi-Fi, WhatsApp messages and calls waiting on the PC (mirrored from WhatsApp Desktop's notifications; tap to see them), weather for the PC's location (tap it for the Weather page), PC media player (cover art, seek, play/pause/skip, volume, mute) and CPU / GPU / RAM / network tiles with sparklines. Tap the PC name for settings (weather city, disconnect). |
 | `[1]` | **Mirror** | One swipe right of Home. The PC's main monitor live on the phone, with the mouse pointer, at up to about 30 frames a second, over Wi-Fi or USB. The PC's sound plays on the phone's speaker (switch at the top right). **Touch control** (off by default, so you can just watch and swipe pages): turn it on with the *Touch* switch at the top right. Then tap to click there, press and hold to right-click, drag to drag, and use two fingers to scroll. For example: play a video on the PC, switch the monitor off, and keep watching and listening on the phone. It streams only while this page is open. |
 | `[2]` | **Remote** | Control the PC's mouse and keyboard, over Wi-Fi or USB. Left half: a touchpad. Move with one finger, tap to click, tap with two fingers to right-click, drag with two fingers to scroll. It also has Left click, Hold (to drag) and Right click buttons. Right half: a keyboard with letters, numbers and symbols, arrows, Esc, Tab and Del. Ctrl, Alt, Win and Shift apply to the next key, for shortcuts like Ctrl+C or Alt+Tab. Swipe on the page title to change page. |
 | `[3]` | **Launcher** | 12 tiles: Terminal, Files, VS Code, Browser, Spotify, Calculator, Settings, Snip, Task Manager, Mute, Screen Off, Lock. |
@@ -164,6 +164,31 @@ diagnose.ps1               read-only troubleshooting report
 start_agent.bat            start the agent in a console window
 start_agent_admin.bat      start the agent as administrator
 ```
+
+## Version history
+
+All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLink/releases). To update, run the install command again on the PC; the phone app updates itself over USB, or install the newest `PerfLink.apk`.
+
+| Version | Date | What changed |
+|---|---|---|
+| **1.18** | 25 Nov 2026 | Bigger Home clock that fills its space, with a slim 12h / 24h switch to its left. The date shows the year. RAM modules on Performance as a tidy table (`RAM 1 │ 8 GB │ DDR4 │ 2666 MT/s`). |
+| **1.17** | 25 Nov 2026 | A top bar on every page with the page name, Disconnect (left) and Home (right). The first page dot is a home icon. Each RAM stick on its own row with size, DDR type and speed. 12h / 24h clock switch. Layouts checked on 16:9, 20:9 and 4:3 screens and kept clear of camera cut-outs. Unit tests for the PC agent and the app. |
+| **1.16** | 25 Nov 2026 | Disconnect button (with confirm) on every page. RAM split (`8 GB + 8 GB`) on Home, Overlay and Performance. The Home button now always slides all the way to Home. *(1.15 was folded into this release.)* |
+| **1.14** | 25 Nov 2026 | The PC list and Home show who uses each PC (Windows name), whether it's a laptop or a desktop, and its IP address. |
+| **1.13** | 25 Nov 2026 | Home shows how the phone is connected (USB or Wi-Fi) next to the battery. The installer warns when Windows Firewall blocks Python on the current network. |
+| **1.12** | 24 Nov 2026 | Crash-proof screen mirroring (capture runs in separate helper processes that restart on their own, with a GDI fallback). The app scales to fit every screen size. |
+| **1.11** | 24 Nov 2026 | New page order (Weather is one swipe left of Home, Mirror one swipe right). Mirror touch control is off by default. |
+| **1.10** | 24 Nov 2026 | Touch control on Mirror (tap, hold for right-click, drag, two-finger scroll). Mirror shows the main monitor only. Social page removed. |
+| **1.9** | 24 Nov 2026 | Mirror keeps working when a monitor is switched off or the monitor layout changes. |
+| **1.8** | 24 Nov 2026 | **Mirror page**: the PC screen and sound live on the phone. |
+| **1.7** | 24 Nov 2026 | Social page with notifications from social apps open on the PC *(removed in 1.10)*. |
+| **1.6** | 24 Nov 2026 | **Weather page** with detailed weather for the PC's location (now, 24 hours, 7 days). |
+| **1.5** | 24 Nov 2026 | **Remote page**: use the phone as the PC's touchpad and keyboard. WhatsApp calls counted while they ring. The PC opens the phone app when a phone is plugged in over USB. |
+| **1.4** | 24 Nov 2026 | WhatsApp messages and calls waiting on the PC, shown on Home. More reliable updates. |
+| **1.3** | 23 Nov 2026 | Bluetooth & Network page as two panels (Bluetooth devices, Wi-Fi / Ethernet). Better Bluetooth and Wi-Fi detection. |
+| **1.2** | 23 Nov 2026 | Phone battery % on Home. Fixes for updating and for PCs with several Pythons. |
+| **1.1** | 23 Nov 2026 | Tray icon, start with Windows, automatic phone-app install over USB, Bluetooth & Wi-Fi page, proper uninstall from Settings > Apps. |
+| **1.0** | 23 Nov 2026 | First release: live PC stats (FPS, GPU, CPU, RAM, network) on the phone, with Home, Performance, Overlay, Processes, Launcher, OBS and Sessions pages. |
 
 ## Credits
 
