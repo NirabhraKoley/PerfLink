@@ -157,6 +157,8 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         val url = if (host.contains(":")) "ws://$host" else "ws://$host:$WS_PORT"
         prefs.edit().putString("last_ip", host).apply()
         wantConnected = true
+        // the two ways to reach this PC: the USB tunnel (127.0.0.1) and its Wi-Fi / LAN address
+        if (isUsbUrl(url)) { usbUrl = url; wifiUrl = null } else { wifiUrl = url; usbUrl = null }
         _state.update {
             it.copy(conn = Conn.Connecting, target = url, error = null, lastIp = host,
                 history = History(), stats = null)
@@ -168,18 +170,52 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
     // (USB cable replugged, Wi-Fi dropped, half-open socket, stuck handshake…). Reconnect then.
     @Volatile private var lastMessageAt = 0L
     private var currentUrl: String? = null
+
+    // When one way to the PC drops (USB cable pulled, Wi-Fi gone), retry the other one too: pulling the
+    // cable switches to Wi-Fi, and plugging it in again switches back to USB (the PC re-opens the app on
+    // 127.0.0.1). The PC sends its LAN address in every update, so the Wi-Fi way is known even when the
+    // app was started over USB.
+    @Volatile private var usbUrl: String? = null
+    @Volatile private var wifiUrl: String? = null
+
+    private fun isUsbUrl(u: String) = Regex("""//(127\.0\.0\.1|localhost)(:|/|$)""").containsMatchIn(u)
+    private fun portOf(u: String) = Regex(""":(\d+)(/|$)""").find(u.removePrefix("ws://"))?.groupValues?.get(1) ?: "$WS_PORT"
+
+    /** The way to try after [failed] didn't work: the other one, when it's known. */
+    private fun nextUrl(failed: String): String =
+        (if (isUsbUrl(failed)) wifiUrl else usbUrl)?.takeIf { it != failed } ?: failed
+
+    private fun learnRoutes(url: String, s: Stats) {
+        if (isUsbUrl(url)) s.net.localIp?.takeIf { it.isNotBlank() }?.let { wifiUrl = "ws://$it:${portOf(url)}" }
+        else if (usbUrl == null) usbUrl = "ws://127.0.0.1:${portOf(url)}"
+    }
     private var watchdogJob: Job? = null
+
+    /** True when the USB tunnel to the PC is there (adb forwards 127.0.0.1:port only while the cable is in). */
+    private suspend fun usbTunnelUp(usb: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", portOf(usb).toInt()), 400) }
+            true
+        }.getOrDefault(false)
+    }
 
     private fun startWatchdog() {
         if (watchdogJob?.isActive == true) return
         watchdogJob = viewModelScope.launch {
+            var tick = 0
             while (true) {
                 delay(2000)
                 val url = currentUrl ?: continue
                 if (!wantConnected) continue
+                // On Wi-Fi with the cable plugged in again: switch back to USB (faster, steadier)
+                val usb = usbUrl
+                if (++tick % 5 == 0 && !isUsbUrl(url) && usb != null && _state.value.conn == Conn.Connected && usbTunnelUp(usb)) {
+                    open(usb)
+                    continue
+                }
                 if (System.currentTimeMillis() - lastMessageAt > 8000) {
                     _state.update { it.copy(conn = Conn.Reconnecting, error = "No data from the PC, retrying") }
-                    open(url)
+                    open(nextUrl(url))
                 }
             }
         }
@@ -196,7 +232,9 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                _state.update { it.copy(conn = Conn.Connected, error = null) }
+                if (webSocket != socket) return
+                // `target` decides the USB / Wi-Fi label on Home: it's the way that is working now
+                _state.update { it.copy(conn = Conn.Connected, error = null, target = url) }
                 if (obsViewing) webSocket.send(JSONObject().put("cmd", "obs_view").put("on", true).toString())
                 if (mirrorOn) webSocket.send(mirrorCommand(true).toString())
             }
@@ -238,6 +276,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
                     return
                 }
                 val s = parseStats(text) ?: return
+                if (webSocket == socket) learnRoutes(url, s)
                 _state.update { it.copy(conn = Conn.Connected, stats = s, history = it.history.push(s)) }
                 checkUsbEvents(s.usb)
                 checkBtEvents(s.bluetooth)
@@ -405,7 +444,7 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
             delay(2000)
-            if (wantConnected) open(url)
+            if (wantConnected) open(nextUrl(url))
         }
     }
 

@@ -177,6 +177,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.23** | 26 Nov 2026 | **USB ⇄ Wi-Fi switching:** pull the USB cable and the app moves to Wi-Fi by itself within about 10 s (Home shows *Wi-Fi*); plug it in again and it moves back to USB. Before, it kept saying *USB* and retrying the cable. |
 | **1.22** | 26 Nov 2026 | Shows the versions: the PC tray menu header says *PerfLink 1.22*, and Home shows the app version (e.g. *v1.22*) next to USB / Wi-Fi. |
 | **1.21** | 26 Nov 2026 | **Automatic updates over the internet** for both the PC and the phone app, with no USB or shared Wi-Fi needed: the PC installs new versions from GitHub by itself (a *PerfLink Update* task, as administrator, no prompt), and the phone app downloads and installs new releases itself. *Check for updates* in the tray menu and the app's settings. Fixed a garbled "·" in the tray tooltip. |
 | **1.19** | 25 Nov 2026 | **Clock page** (one swipe right of Mirror, works without the PC): analog or digital clock in five designs each (including old-school Vintage and Nixie), with a matching month calendar, a timer that rings and vibrates, and a stopwatch with laps. |
