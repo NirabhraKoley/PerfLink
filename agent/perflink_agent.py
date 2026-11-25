@@ -79,7 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.13"
+VERSION = "1.14"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -444,6 +444,8 @@ class Agent:
             "type": "stats",
             "ts": time.time(),
             "host": socket.gethostname(),
+            "user": USER_NAME,
+            "kind": PC_KIND,
             "frames": self.frames.snapshot(foreground_pid()),
             "gpu": gpu,
             "cpu": cpu,
@@ -583,7 +585,7 @@ class Discovery(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr) -> None:
         if data.strip() == b"PERFLINK_DISCOVER":
-            reply = json.dumps({"type": "perflink", "name": socket.gethostname(),
+            reply = json.dumps({"type": "perflink", "name": socket.gethostname(), "user": USER_NAME, "kind": PC_KIND,
                                 "port": WS_PORT, "version": VERSION})
             self.transport.sendto(reply.encode(), addr)
 
@@ -598,6 +600,38 @@ def _cpu_name() -> str | None:
 
 
 CPU_NAME = _cpu_name()
+
+
+def _user_name() -> str:
+    """Who uses this PC, as Windows shows it ("Nirabhra Koley"); the account name if there's no full name."""
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        size = ctypes.c_ulong(256)
+        if ctypes.windll.secur32.GetUserNameExW(3, buf, ctypes.byref(size)) and buf.value.strip():  # NameDisplay
+            return buf.value.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return os.environ.get("USERNAME", "") or socket.gethostname()
+
+
+USER_NAME = _user_name()
+
+
+def _pc_kind() -> str:
+    """"Laptop" when Windows reports a built-in battery, otherwise "PC" (a desktop)."""
+    class SYSTEM_POWER_STATUS(ctypes.Structure):
+        _fields_ = [("ACLineStatus", ctypes.c_byte), ("BatteryFlag", ctypes.c_ubyte), ("BatteryLifePercent", ctypes.c_byte),
+                    ("SystemStatusFlag", ctypes.c_byte), ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
+    try:
+        st = SYSTEM_POWER_STATUS()
+        if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(st)):
+            return "PC" if st.BatteryFlag & 128 or st.BatteryFlag == 255 else "Laptop"  # 128 = no system battery
+    except Exception:  # noqa: BLE001
+        pass
+    return "PC"
+
+
+PC_KIND = _pc_kind()
 
 
 async def main() -> None:

@@ -211,7 +211,7 @@ data class ProcList(val apps: List<ProcApp>, val totalProcesses: Int, val totalA
 data class AiStatus(val apps: List<AiApp>, val sessions: List<AiSession>, val github: GitHub?)
 
 data class Stats(
-    val host: String?, val frames: Frames, val gpu: Gpu, val cpu: Cpu,
+    val host: String?, val user: String? = null, val kind: String? = null, val frames: Frames, val gpu: Gpu, val cpu: Cpu,
     val ram: Ram, val net: Net, val errors: List<String>,
     val media: Media? = null, val volume: Volume? = null, val weather: Weather? = null,
     val ai: AiStatus? = null,
@@ -276,6 +276,8 @@ fun parseStats(text: String): Stats? = try {
         val r = o.obj("ram"); val n = o.obj("net")
         Stats(
             host = o.s("host"),
+            user = o.s("user"),
+            kind = o.s("kind"),
             frames = Frames(f.s("app"), f.d("fps"), f.d("frame_time_ms"), f.d("low1_fps"),
                 f.d("low01_fps"), f.optJSONArray("frame_times").doubles()),
             gpu = Gpu(g.s("name"), g.d("util"), g.d("power_w"), g.d("temp_c"), g.d("hotspot_c"),

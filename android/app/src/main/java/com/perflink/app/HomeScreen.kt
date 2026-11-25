@@ -126,17 +126,27 @@ private fun ClockBlock(state: UiState, s: Stats, modifier: Modifier, onWeather: 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { onHostClick() }.padding(vertical = 2.dp),
+                // may shrink (with …) so the battery and USB / Wi-Fi labels always fit
+                modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(6.dp)).clickable { onHostClick() }
+                    .padding(vertical = 2.dp),
             ) {
                 val dot = if (state.conn == Conn.Connected) Palette.good else Palette.warn
                 Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
                 Spacer(Modifier.width(6.dp))
-                Text(s.host ?: "", color = Palette.dim, fontSize = 11.sp, letterSpacing = 0.5.sp, maxLines = 1)
+                // laptop or desktop and who uses it ("🖥️ Nirabhra Koley"), with the PC's IP underneath
+                Column {
+                    Text((s.kind?.let { pcKindLabel(it).substringBefore(" ") + " " } ?: "") + (s.user ?: s.host ?: ""),
+                        color = Palette.dim, fontSize = 11.sp, letterSpacing = 0.5.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    s.net.localIp?.let {
+                        Text(it, color = Palette.dim.copy(alpha = 0.75f), fontSize = 10.sp, maxLines = 1, lineHeight = 11.sp)
+                    }
+                }
             }
             // This phone's battery (the app hides the phone's status bar)
             phoneBattery()?.let { (pct, charging) ->
                 Spacer(Modifier.width(12.dp))
-                BatteryChip("Phone", pct, charging, null)
+                BatteryChip("", pct, charging, null)
             }
             // how this phone reaches the PC: USB (the adb tunnel to 127.0.0.1) or Wi-Fi
             state.target?.let { url ->
@@ -673,7 +683,7 @@ private fun BatteryChip(label: String, pct: Int, charging: Boolean, secsLeft: Do
                 cornerRadius = CornerRadius(1.dp.toPx()))
         }
         Spacer(Modifier.width(4.dp))
-        Text("$label $pct%" + if (charging) " ⚡" else "", color = Palette.dim, fontSize = 11.sp, maxLines = 1)
+        Text((if (label.isBlank()) "" else "$label ") + "$pct%" + if (charging) " ⚡" else "", color = Palette.dim, fontSize = 11.sp, maxLines = 1)
         secsLeft?.let {
             val m = (it / 60).toInt()
             Text(" · ${if (m >= 60) "${m / 60}h ${m % 60}m" else "${m}m"} left", color = Palette.dim.copy(alpha = 0.7f),

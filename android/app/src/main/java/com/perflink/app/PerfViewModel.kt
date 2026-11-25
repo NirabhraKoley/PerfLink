@@ -34,7 +34,7 @@ const val WS_PORT = 47800
 const val DISCOVERY_PORT = 47801
 const val HISTORY = 120
 
-data class FoundPc(val name: String, val ip: String, val port: Int)
+data class FoundPc(val name: String, val ip: String, val port: Int, val user: String? = null, val kind: String? = null)
 
 enum class Conn { Idle, Connecting, Connected, Reconnecting }
 
@@ -125,7 +125,8 @@ class PerfViewModel(app: Application) : AndroidViewModel(app) {
                         val o = JSONObject(String(pkt.data, 0, pkt.length))
                         if (o.optString("type") == "perflink") {
                             val ip = pkt.address.hostAddress ?: continue
-                            results[ip] = FoundPc(o.optString("name", ip), ip, o.optInt("port", WS_PORT))
+                            results[ip] = FoundPc(o.optString("name", ip), ip, o.optInt("port", WS_PORT),
+                                o.optString("user").ifBlank { null }, o.optString("kind").ifBlank { null })
                         }
                     } catch (_: SocketTimeoutException) {
                     } catch (_: Exception) {

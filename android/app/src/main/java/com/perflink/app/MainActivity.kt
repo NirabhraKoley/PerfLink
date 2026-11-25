@@ -178,8 +178,10 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
                     Box(Modifier.size(10.dp).clip(CircleShape).background(Palette.good))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(pc.name, color = Palette.text, fontWeight = FontWeight.SemiBold)
-                        Text(pc.ip, color = Palette.dim, fontSize = 12.sp)
+                        // who uses it ("Nirabhra Koley"), then laptop or desktop, the computer's name and its IP
+                        Text(pc.user ?: pc.name, color = Palette.text, fontWeight = FontWeight.SemiBold)
+                        Text(listOfNotNull(pc.kind?.let { pcKindLabel(it) }, pc.name.takeIf { pc.user != null }, pc.ip)
+                            .joinToString(" · "), color = Palette.dim, fontSize = 12.sp)
                     }
                     Text("Connect", color = Palette.accent, fontWeight = FontWeight.SemiBold)
                 }
@@ -205,6 +207,9 @@ fun ConnectScreen(state: UiState, onScan: () -> Unit, onConnect: (String) -> Uni
         Text("Port $WS_PORT · discovery UDP $DISCOVERY_PORT", color = Palette.dim, fontSize = 12.sp)
     }
 }
+
+/** "💻 Laptop" or "🖥️ PC", from the kind the PC reports. */
+fun pcKindLabel(kind: String): String = if (kind.equals("Laptop", ignoreCase = true)) "💻 Laptop" else "🖥️ PC"
 
 // =============================================================================== screen size
 /** The pages are laid out for a 640×360 dp landscape screen (a typical 5–6" phone). On any other phone
