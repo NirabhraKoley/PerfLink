@@ -134,6 +134,10 @@ class SelfUpdate:
             pass
 
     # ---------------------------------------------------------------- checking
+    def available(self) -> str | None:
+        """The newer version GitHub has, if the last check found one (the tray highlights "Update now")."""
+        return self.latest if is_newer(self.latest, self.version) else None
+
     def fetch_latest(self) -> str | None:
         url = f"https://raw.githubusercontent.com/{self.repo}/main/agent/perflink_agent.py?t={int(time.time())}"
         req = urllib.request.Request(url, headers={"User-Agent": "PerfLink-agent", "Cache-Control": "no-cache"})

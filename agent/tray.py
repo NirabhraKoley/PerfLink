@@ -30,6 +30,7 @@ class Tray:
         self.version = version             # shown in the menu header: "PerfLink 1.22"
         self.on_check_update = None        # set by the agent (installed copies): check GitHub now
         self.on_update_now = None          # set by the agent: open PowerShell and run the install command
+        self.get_update = None             # set by the agent: () -> newer version on GitHub, or None
         self.get_devices = None            # set by the agent: {"allowed": {id: {...}}, "blocked": {...}}
         self.on_unblock = None             # (id) -> None
         self.on_forget = None              # (id) -> None
@@ -92,6 +93,7 @@ class Tray:
         update_item = ToolStripMenuItem("Check for updates")
         update_now_item = ToolStripMenuItem("Update now (PowerShell)")
         update_now_item.ToolTipText = "Opens PowerShell and runs the PerfLink install command"
+        menu.ShowItemToolTips = True
         allowed_menu = ToolStripMenuItem("Allowed phones")
         blocked_menu = ToolStripMenuItem("Blocked phones")
         uninstaller = os.path.join(os.path.dirname(HERE), "uninstall.ps1")
@@ -153,10 +155,30 @@ class Tray:
             if self.on_update_now:
                 threading.Thread(target=self.on_update_now, daemon=True).start()
 
+        def _show_update_badge():
+            """A newer version is on GitHub: "! Update now" in light blue, and "New update arrived" on hover."""
+            from System.Drawing import Color as DColor  # type: ignore
+            newer = None
+            try:
+                newer = self.get_update() if self.get_update else None
+            except Exception:  # noqa: BLE001
+                pass
+            if newer:
+                update_now_item.Text = "!  Update now (PowerShell)"
+                update_now_item.BackColor = DColor.FromArgb(179, 224, 255)    # light blue
+                update_now_item.ForeColor = DColor.FromArgb(10, 40, 70)
+                update_now_item.ToolTipText = f"New update arrived: PerfLink {newer}"
+            else:
+                update_now_item.Text = "Update now (PowerShell)"
+                update_now_item.BackColor = DColor.Empty
+                update_now_item.ForeColor = DColor.Empty
+                update_now_item.ToolTipText = "Opens PowerShell and runs the PerfLink install command"
+
         def _menu_opening(s, e):
             status_item.Text = self.status
             auto.Checked = autostart.is_enabled()
             _fill_phone_menus()
+            _show_update_badge()
 
         open_log.Click += EventHandler(_open_log)
         open_dir.Click += EventHandler(_open_dir)

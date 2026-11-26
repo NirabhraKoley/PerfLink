@@ -273,6 +273,20 @@ class UpdateNowTests(unittest.TestCase):
         self.assertIn("'PerfLink Update'", su.SCHEDULE_PS)
 
 
+class UpdateBadgeTests(unittest.TestCase):
+    def test_available_only_when_newer(self):
+        import self_update as su, tempfile
+        d = tempfile.mkdtemp(); os.makedirs(os.path.join(d, "agent"))
+        u = su.SelfUpdate("1.28", d, None, notify=None, enabled=False)
+        self.assertIsNone(u.available())          # not checked yet
+        u.latest = "1.28"
+        self.assertIsNone(u.available())          # up to date: plain "Update now"
+        u.latest = "1.29"
+        self.assertEqual(u.available(), "1.29")   # "! Update now" in light blue, "New update arrived: PerfLink 1.29"
+        u.latest = "1.27"
+        self.assertIsNone(u.available())
+
+
 if __name__ == "__main__":
     unittest.main()
 

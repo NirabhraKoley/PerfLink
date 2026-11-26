@@ -199,6 +199,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.28** | 26 Nov 2026 | When a new version is out, the PC tray menu shows **"! Update now (PowerShell)"** in light blue, and hovering over it says *"New update arrived: PerfLink x.y"*. |
 | **1.27** | 26 Nov 2026 | **PerfLink on iPhone and iPad.** The PC now also serves PerfLink as a web app: open `http://<PC address>:47800` in Safari, click **Allow** on the PC, then *Share → Add to Home Screen* to get an app icon. Home, Performance, Overlay, Remote (touchpad + keyboard), Launcher, Processes and Weather. Works in any browser on the same Wi-Fi. Also: an **AMOLED screensaver** (black screen, big clock and date that drifts every minute; tap to return) and a **dark / light theme** button, both in the top bar of every page. |
 | **1.26** | 26 Nov 2026 | PC update checks **every 2 hours** (was 6): a PC that was off, or an update that failed, catches up within 2 hours. New tray item **Update now (PowerShell)** opens PowerShell and runs the install command, to update by hand and watch it. |
 | **1.25** | 26 Nov 2026 | **Asks before updating:** when a new version is out, the phone app shows *"Update available"* with the version and one line about what's new, with **Update now** / **Later** (Later asks again next time the app opens). |
