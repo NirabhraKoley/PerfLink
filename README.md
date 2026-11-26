@@ -1,6 +1,6 @@
 # PerfLink
 
-**Your Windows PC's live stats and controls on an Android phone.** FPS, frame time, GPU/CPU load, temperature and power, network, processes, USB and Bluetooth devices, Wi-Fi, media, OBS and quick actions, on a full-screen landscape dashboard you can keep beside your monitor.
+**Your Windows PC's live stats and controls on an Android phone, or an iPhone.** FPS, frame time, GPU/CPU load, temperature and power, network, processes, USB and Bluetooth devices, Wi-Fi, media, OBS and quick actions, on a full-screen landscape dashboard you can keep beside your monitor.
 
 ```
  PC (Windows)                                    Phone (Android)
@@ -37,10 +37,30 @@ A pop-up appears on every page when a USB device is plugged in or removed, or a 
 
 On the PC, PerfLink runs quietly in the background with an **icon next to the clock** (right-click it for status, *Start with Windows*, log and *Quit*), and **starts automatically when you sign in to Windows**.
 
+## iPhone and iPad
+
+There's no App Store app: the PC serves PerfLink as a **web app**, and Safari turns it into a home-screen app. No Mac, App Store or Apple account needed.
+
+1. Make sure PerfLink is running on the PC and the iPhone is on the **same Wi-Fi**.
+2. Find the PC's address: hover over the PerfLink icon next to the clock (*PC 192.168.1.6 · …*).
+3. On the iPhone, open **Safari** and go to `http://<PC address>:47800`, for example `http://192.168.1.6:47800`.
+4. The PC shows *"iPhone (Safari) wants to connect"*: click **Allow** (the iPhone shows *Waiting for the PC to allow this phone* until then).
+5. Tap **Share** → **Add to Home Screen**. PerfLink now has its own icon and opens full screen like an app. The first time you open it from the icon, the PC asks once more (it shows up as *iPhone (Home Screen app)*).
+
+Turn the iPhone sideways for the full landscape layout; it also works upright.
+
+**Pages on iPhone:** Home (clock, weather, WhatsApp counts, media controls with volume and seek, CPU / GPU / RAM / network tiles), Performance, Overlay, Remote (touchpad + keyboard), Launcher, Processes and Weather. Switch pages with the names along the top bar. Mirror, Clock, OBS, Sessions, Bluetooth and USB are Android-only for now.
+
+**Good to know:**
+- It uses the same port and the same *Allow* / *Block* list as the Android app; *Blocked phones* in the tray menu unblocks an iPhone too.
+- There's no USB mode on iPhone: it needs Wi-Fi.
+- To keep the screen on while it's on a stand: **Settings → Display & Brightness → Auto-Lock → Never** (iOS doesn't let web apps keep the screen awake over plain http).
+- It also works in any browser on the same network (a tablet, a laptop, an Android phone without the app).
+
 ## Requirements
 
 - **PC:** Windows 10 or 11, [Python 3.10+](https://www.python.org/downloads/) (tick *Add python.exe to PATH*).
-- **Phone:** Android 8.0 or newer, on the same network as the PC (or connected by USB).
+- **Phone:** Android 8.0 or newer, on the same network as the PC (or connected by USB). **iPhone / iPad:** any recent iOS with Safari, on the same Wi-Fi as the PC (see [iPhone and iPad](#iphone-and-ipad)).
 - Optional: [OBS Studio](https://obsproject.com/) 28+ for the OBS page, the [GitHub CLI](https://cli.github.com/) for the GitHub panel.
 
 GPU sensors are read through LibreHardwareMonitor and work with AMD, NVIDIA and Intel GPUs. It was developed and tested on an AMD Radeon RX 6700 XT.
@@ -152,6 +172,8 @@ The APK is written to `android/app/build/outputs/apk/release/app-release.apk`. R
 ```
 agent/                     PC side (Python)
   perflink_agent.py        WebSocket server, sensors, FPS, network
+  webapp.py                serves the iPhone / browser web app on the same port
+  web/                     the web app itself (index.html, app.js, app.css, icons)
   extras.py                media, volume, weather
   processes.py             process list + icons
   usb_devices.py           USB devices + plug/unplug feed
@@ -177,6 +199,7 @@ All releases are on the [Releases page](https://github.com/NirabhraKoley/PerfLin
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.27** | 26 Nov 2026 | **PerfLink on iPhone and iPad.** The PC now also serves PerfLink as a web app: open `http://<PC address>:47800` in Safari, click **Allow** on the PC, then *Share → Add to Home Screen* to get an app icon. Home, Performance, Overlay, Remote (touchpad + keyboard), Launcher, Processes and Weather. Works in any browser on the same Wi-Fi. Also: an **AMOLED screensaver** (black screen, big clock and date that drifts every minute; tap to return) and a **dark / light theme** button, both in the top bar of every page. |
 | **1.26** | 26 Nov 2026 | PC update checks **every 2 hours** (was 6): a PC that was off, or an update that failed, catches up within 2 hours. New tray item **Update now (PowerShell)** opens PowerShell and runs the install command, to update by hand and watch it. |
 | **1.25** | 26 Nov 2026 | **Asks before updating:** when a new version is out, the phone app shows *"Update available"* with the version and one line about what's new, with **Update now** / **Later** (Later asks again next time the app opens). |
 | **1.24** | 26 Nov 2026 | **Security: phones must be allowed.** When a phone connects over Wi-Fi for the first time, the PC shows *"<phone> wants to connect"* with **Allow** / **Block**; until then the phone gets nothing and can't control the PC. Decisions are remembered per phone (not per IP). Blocked phones are refused at once; the tray menu has **Allowed phones** and **Blocked phones** to forget or unblock one. Phones on USB are always trusted (they are plugged into the PC). |

@@ -89,7 +89,7 @@ fun LauncherPage(state: UiState, onAction: (String) -> Unit) {
     val muted = s?.volume?.muted == true
     Box(
         Modifier.fillMaxSize().background(
-            Brush.radialGradient(listOf(Color(0xFF0D201F), Color(0xFF080B0E)), radius = 1500f)
+            pageGlow(Color(0xFF0D201F), 1500f)
         )
     ) {
         Column(
@@ -113,7 +113,7 @@ fun LauncherPage(state: UiState, onAction: (String) -> Unit) {
                 t.message, color = if (t.ok) Palette.text else Color(0xFFFFB4AB), fontSize = 13.sp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 26.dp)
                     .clip(RoundedCornerShape(50)).background(Color(0xE6151B22))
-                    .border(1.dp, if (t.ok) Color(0x33FFFFFF) else Color(0x66FF6B6B), RoundedCornerShape(50))
+                    .border(1.dp, if (t.ok) Palette.veil(0x33 / 255f) else Color(0x66FF6B6B), RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
@@ -130,7 +130,7 @@ private fun LauncherTile(t: Tile, hint: String?, active: Boolean, modifier: Modi
         modifier.scale(scale).clip(shape)
             .background(
                 Brush.linearGradient(
-                    listOf(t.tint.copy(alpha = if (active) 0.42f else 0.22f), t.tint.copy(alpha = 0.05f), Color(0x08FFFFFF))
+                    listOf(t.tint.copy(alpha = if (active) 0.42f else 0.22f), t.tint.copy(alpha = 0.05f), Palette.veil(0x08 / 255f))
                 )
             )
             .border(1.dp, t.tint.copy(alpha = if (active) 0.9f else 0.45f), shape)

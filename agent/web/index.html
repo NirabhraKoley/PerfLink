@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PerfLink">
+<meta name="theme-color" content="#080B10">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" href="/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+<title>PerfLink</title>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <button id="btn-disconnect" class="round" aria-label="Disconnect">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3.5v8 M7 6.6a7.2 7.2 0 1 0 10 0"/></svg>
+    </button>
+    <nav id="tabs"></nav>
+    <div id="live"><i></i><span>Connecting…</span></div>
+    <button id="btn-home" class="round" aria-label="Home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7 M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
+    </button>
+  </header>
+
+  <main id="pages">
+    <!-- HOME: clock + weather (left), media (right), four stat tiles (bottom) -->
+    <section class="page" id="p-home">
+      <div class="home-top">
+        <div class="clock-block">
+          <div class="host">
+            <button class="host-btn" id="host-btn"><i id="host-dot"></i><span><b id="host-name">PC</b><small id="host-ip"></small></span></button>
+            <span id="link-chip">Wi-Fi</span>
+          </div>
+          <button class="wa hidden" id="wa"></button>
+          <div class="clock-area" id="clock-area">
+            <div class="clock-row">
+              <div class="fmt"><button data-f="12">12h</button><button data-f="24">24h</button></div>
+              <div class="clock" id="clock"><span id="ch">12</span><span class="colon">:</span><span id="cm">00</span></div>
+              <div class="clock-side"><span id="cs">00</span><span class="ampm" id="campm">AM</span></div>
+            </div>
+            <div class="date" id="date"></div>
+            <button class="wx-row hidden" id="wx-row"></button>
+          </div>
+        </div>
+        <div class="media-block">
+          <div class="track">
+            <div class="art" id="art">♪</div>
+            <div class="track-text">
+              <div class="media-app" id="m-app">MEDIA</div>
+              <div class="media-title" id="m-title">Nothing playing</div>
+              <div class="media-artist" id="m-artist">Play something on the PC</div>
+            </div>
+          </div>
+          <input type="range" class="seek" id="seek" min="0" max="1000" value="0" style="margin-top:12px">
+          <div class="times"><span id="m-pos">0:00</span><span id="m-dur">0:00</span></div>
+          <div class="controls">
+            <button class="ctl" data-media="prev" aria-label="Previous"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4h2.5v16H5z M20 4L8.5 12 20 20z"/></svg></button>
+            <button class="play" id="play" aria-label="Play or pause"></button>
+            <button class="ctl" data-media="next" aria-label="Next"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 4H19v16h-2.5z M4 4l11.5 8L4 20z"/></svg></button>
+            <button class="ctl" id="mute" aria-label="Mute"></button>
+            <input type="range" class="vol" id="vol" min="0" max="100" value="0">
+            <span class="vol-n" id="vol-n">–</span>
+          </div>
+        </div>
+      </div>
+      <div class="tiles">
+        <div class="tile" id="t-cpu"></div><div class="tile" id="t-gpu"></div><div class="tile" id="t-ram"></div><div class="tile" id="t-net"></div>
+      </div>
+    </section>
+
+    <section class="page" id="p-performance">
+      <div class="statusline" id="perf-status"></div>
+      <div class="scroll grid" id="perf"></div>
+    </section>
+
+    <section class="page" id="p-overlay">
+      <div class="statusline" id="ov-status"></div>
+      <div class="scroll ov" id="ov"></div>
+    </section>
+
+    <section class="page" id="p-remote">
+      <div class="sub" id="remote-sub" style="margin-bottom:8px">mouse and keyboard for the PC</div>
+      <div class="remote">
+        <div class="pad-col">
+          <div class="pad" id="pad">Touchpad<br>1 finger: move · tap: click<br>2 fingers: tap = right click · drag = scroll</div>
+          <div class="pad-btns">
+            <button id="b-left">Left click</button><button id="b-hold" style="flex:.8">Hold</button><button id="b-right">Right click</button>
+          </div>
+        </div>
+        <div class="kbd" id="kbd"></div>
+      </div>
+    </section>
+
+    <section class="page" id="p-launcher">
+      <div class="sub" style="margin-bottom:8px">Quick actions on the PC</div>
+      <div class="launch" id="launch"></div>
+    </section>
+
+    <section class="page" id="p-processes">
+      <div class="statusline" id="proc-status"></div>
+      <div class="phead"><span>App</span><button data-sort="cpu" class="on">CPU</button><button data-sort="ram">Memory</button></div>
+      <div class="scroll plist" id="plist"></div>
+    </section>
+
+    <section class="page" id="p-weather">
+      <div class="statusline" id="wx-status"></div>
+      <div class="wx" id="wx"></div>
+    </section>
+  </main>
+</div>
+
+<!-- connecting / waiting for the PC's OK / refused / disconnected -->
+<div id="cover">
+  <div class="cover-box">
+    <img class="logo" src="/icon-180.png" alt="">
+    <h1 id="cover-title">PerfLink</h1>
+    <div id="cover-body"><div class="spinner"></div><p>Connecting to the PC…</p></div>
+  </div>
+</div>
+<div id="dialog" class="hidden"></div>
+<div id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

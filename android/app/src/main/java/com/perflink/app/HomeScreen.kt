@@ -72,8 +72,8 @@ private object HomeColors {
     val ram = Color(0xFFA78BFA)
     val net = Color(0xFFF59E0B)
     val teal = Color(0xFF5EEAD4)
-    val clock = Color(0xFFF3F6F9)
-    val colon = Color(0xFF7D8794)
+    val clock get() = if (Palette.light) Color(0xFF0F172A) else Color(0xFFF3F6F9)
+    val colon get() = if (Palette.light) Color(0xFF64748B) else Color(0xFF7D8794)
 }
 
 @Composable
@@ -91,7 +91,7 @@ fun HomePage(
     var settings by remember { mutableStateOf(false) }
     Box(
         Modifier.fillMaxSize().background(
-            Brush.linearGradient(listOf(Color(0xFF0A0F12), Color(0xFF0C1A1B), Color(0xFF091012)))
+            Brush.linearGradient(themed(listOf(Color(0xFF0A0F12), Color(0xFF0C1A1B), Color(0xFF091012))))
         )
     ) {
         Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)) {
@@ -237,7 +237,7 @@ private fun WaCount(n: Int, label: String, icon: DrawScope.(Color) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier.size(28.dp).clip(RoundedCornerShape(8.dp))
-                .background(if (active) WaGreen.copy(alpha = 0.22f) else Color(0x14FFFFFF)),
+                .background(if (active) WaGreen.copy(alpha = 0.22f) else Palette.veil(0x14 / 255f)),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(16.dp)) { icon(if (active) WaGreen else Palette.dim) }
@@ -330,7 +330,7 @@ private fun WaGlyph(size: Dp) {
 private fun ClockFormatSwitch(use24: Boolean, onChange: (Boolean) -> Unit) {
     // 12h over 24h: a slim pill left of the time
     Column(
-        Modifier.width(34.dp).clip(RoundedCornerShape(9.dp)).background(Color(0x14FFFFFF)).padding(2.dp),
+        Modifier.width(34.dp).clip(RoundedCornerShape(9.dp)).background(Palette.veil(0x14 / 255f)).padding(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         listOf(false to "12h", true to "24h").forEach { (v, label) ->
@@ -340,7 +340,7 @@ private fun ClockFormatSwitch(use24: Boolean, onChange: (Boolean) -> Unit) {
                     .clickable { onChange(v) }.padding(vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, color = if (on) Color(0xFF0B1418) else Palette.dim, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                Text(label, color = if (on) Palette.bg else Palette.dim, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
                     lineHeight = 12.sp)
             }
         }
@@ -428,11 +428,11 @@ private fun MediaBlock(
             Glyph(34.dp, { onMedia("prev", null) }) { drawSkip(forward = false, color = Palette.dim) }
             Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(50.dp).clip(CircleShape).background(Color(0xFFF3F6F9)).clickable { onMedia("play_pause", null) },
+                Modifier.size(50.dp).clip(CircleShape).background(HomeColors.clock).clickable { onMedia("play_pause", null) },
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(Modifier.size(20.dp)) {
-                    if (m?.playing == true) drawPause(Color(0xFF0B0E13)) else drawPlay(Color(0xFF0B0E13))
+                    if (m?.playing == true) drawPause(Palette.bg) else drawPlay(Palette.bg)
                 }
             }
             Spacer(Modifier.width(8.dp))
@@ -591,7 +591,7 @@ private fun StatTile(
     label: String, color: Color, value: String, unit: String, sub: String,
     history: List<Float>, max: Float?, modifier: Modifier,
 ) {
-    Box(modifier.fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color(0x0FFFFFFF))) {
+    Box(modifier.fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Palette.veil(0x0F / 255f))) {
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(34.dp)) {
             LineChart(listOf(Series(history, color.copy(alpha = 0.55f))), height = 34.dp, fixedMax = max, showGrid = false)
         }

@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -13,6 +14,7 @@ import bluetooth  # noqa: E402
 import mirror  # noqa: E402
 import usb_tunnel  # noqa: E402
 import weather  # noqa: E402
+import webapp  # noqa: E402
 import whatsapp  # noqa: E402
 
 
@@ -273,3 +275,69 @@ class UpdateNowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WebAppTests(unittest.TestCase):
+    """The iPhone / browser web app served on the agent's port."""
+
+    def test_pages_resolve(self):
+        for path in ("/", "/index.html", "/iphone", "/ios/", "/?x=1", "/#home"):
+            status, ctype, body = webapp.page(path)
+            self.assertEqual(status, 200, path)
+            self.assertTrue(ctype.startswith("text/html"), path)
+            self.assertIn(b"/app.js", body)
+        self.assertEqual(webapp.page("/app.js")[1], "text/javascript; charset=utf-8")
+        self.assertEqual(webapp.page("/app.css")[1], "text/css; charset=utf-8")
+        self.assertEqual(webapp.page("/manifest.webmanifest")[1], "application/manifest+json")
+        self.assertEqual(webapp.page("/icon-180.png")[1], "image/png")
+
+    def test_nothing_outside_the_web_folder(self):
+        for path in ("/../perflink_agent.py", "/..%2fconfig.json", "/../config.json", "/web/../../agent/config.json",
+                     "/C:/Windows/win.ini", "/..\perflink_agent.py", "/missing.html", "/nothing"):
+            self.assertEqual(webapp.page(path)[0], 404, path)
+
+    def test_only_known_file_types(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("ok.html", "secret.py", "notes.txt"):
+                with open(os.path.join(d, name), "w") as f:
+                    f.write("x")
+            self.assertEqual(webapp.page("/ok.html", d)[0], 200)
+            self.assertEqual(webapp.page("/secret.py", d)[0], 404)
+            self.assertEqual(webapp.page("/notes.txt", d)[0], 404)
+
+    def test_websocket_handshakes_pass_through(self):
+        ws_req = types.SimpleNamespace(path="/", headers={"Upgrade": "websocket", "Connection": "Upgrade"})
+        self.assertIsNone(webapp.process_request(None, ws_req))
+        page_req = types.SimpleNamespace(path="/", headers={})
+        r = webapp.process_request(None, page_req)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["Cache-Control"], "no-cache")
+        self.assertEqual(int(r.headers["Content-Length"]), len(r.body))
+        self.assertEqual(webapp.process_request(None, types.SimpleNamespace(path="/x.py", headers={})).status_code, 404)
+
+    def test_page_says_hello_like_the_android_app(self):
+        js = webapp.page("/app.js")[2].decode("utf-8")
+        self.assertIn('cmd: "hello", id: DEVICE_ID, name: DEVICE_NAME', js)
+        for status in ('"pending"', '"blocked"', '"not_allowed"', '"allowed"'):
+            self.assertIn(status, js)
+
+    def test_served_over_the_real_port(self):
+        """Same port: a browser gets the page and a WebSocket client still gets stats."""
+        import asyncio
+        import urllib.request
+        import websockets
+
+        async def handler(ws):
+            await ws.send(json.dumps({"type": "stats"}))
+
+        async def run():
+            async with websockets.serve(handler, "127.0.0.1", 0, process_request=webapp.process_request) as srv:
+                port = srv.sockets[0].getsockname()[1]
+                html = await asyncio.to_thread(lambda: urllib.request.urlopen(f"http://127.0.0.1:{port}/").read())
+                async with websockets.connect(f"ws://127.0.0.1:{port}") as c:
+                    msg = json.loads(await c.recv())
+                return html, msg
+
+        html, msg = asyncio.run(run())
+        self.assertIn(b"PerfLink", html)
+        self.assertEqual(msg["type"], "stats")

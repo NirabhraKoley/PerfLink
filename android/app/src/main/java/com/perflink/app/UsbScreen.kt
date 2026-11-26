@@ -88,7 +88,7 @@ fun UsbPage(state: UiState) {
     val u = state.stats?.usb
     Box(
         Modifier.fillMaxSize().background(
-            Brush.radialGradient(listOf(Color(0xFF0B2230), Color(0xFF080B0E)), radius = 1500f)
+            pageGlow(Color(0xFF0B2230), 1500f)
         )
     ) {
         if (u == null) {
@@ -115,7 +115,7 @@ fun UsbPage(state: UiState) {
             // ---------------- right: count, drives, plug/unplug feed
             Column(Modifier.weight(1f).fillMaxHeight().padding(top = 30.dp).verticalScroll(rememberScrollState())) {
                 Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x14FFFFFF))
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.veil(0x14 / 255f))
                         .border(1.dp, UsbCyan.copy(alpha = 0.35f), RoundedCornerShape(14.dp)).padding(14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -164,8 +164,8 @@ private fun DeviceCard(d: UsbDevice) {
     val c = UsbIcons.color(d.category)
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(if (d.hub) Color(0x0AFFFFFF) else Color(0x12FFFFFF))
-            .border(1.dp, Color(0x14FFFFFF), RoundedCornerShape(12.dp)).padding(10.dp),
+            .background(if (d.hub) Palette.veil(0x0A / 255f) else Palette.veil(0x12 / 255f))
+            .border(1.dp, Palette.veil(0x14 / 255f), RoundedCornerShape(12.dp)).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(c.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {

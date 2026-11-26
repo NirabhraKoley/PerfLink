@@ -11,6 +11,7 @@ Collects live PC performance stats and streams them to the PerfLink Android app.
 Transport:
   * WebSocket  ws://<pc-ip>:47800  -> JSON snapshot pushed every INTERVAL seconds
   * UDP 47801 discovery: phone broadcasts "PERFLINK_DISCOVER", agent replies with JSON
+  * http://<pc-ip>:47800 (same port) -> the web app for iPhone / any browser (agent/web, see webapp.py)
 
 Run:  python perflink_agent.py [--interval 0.5] [--ping-host 1.1.1.1]
 """
@@ -76,12 +77,13 @@ from extras import Media, Volume, load_config, save_config
 from weather import Weather
 from self_update import SelfUpdate
 from devices import ALLOWED, BLOCKED, Devices, device_id, device_name
+import webapp
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BIN = os.path.join(HERE, "bin")
 WS_PORT = 47800
 DISCOVERY_PORT = 47801
-VERSION = "1.26"
+VERSION = "1.27"
 
 # Processes that present frames but are never "the game"
 IGNORED_APPS = {
@@ -822,11 +824,14 @@ async def main() -> None:
     agent.loop = loop
     obs_task = asyncio.create_task(agent.obs.run())  # noqa: F841  (kept alive for the agent's lifetime)
     await loop.create_datagram_endpoint(Discovery, local_addr=("0.0.0.0", DISCOVERY_PORT))
-    async with websockets.serve(agent.handler, "0.0.0.0", WS_PORT, ping_interval=10):
+    # the same port also serves the iPhone / browser web app (plain page requests, see webapp.py)
+    async with websockets.serve(agent.handler, "0.0.0.0", WS_PORT, ping_interval=10,
+                                process_request=webapp.process_request):
         ip = agent.net.local_ip or "?"
         print(f"PerfLink agent {VERSION} running")
         print(f"  WebSocket : ws://{ip}:{WS_PORT}")
         print(f"  Discovery : UDP {DISCOVERY_PORT}")
+        print(f"  iPhone    : open http://{ip}:{WS_PORT} in Safari")
         print(f"  GPU sensors: {'ok' if agent.sensors.ok else agent.sensors.error}")
         is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
         if not is_admin:

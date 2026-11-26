@@ -53,14 +53,14 @@ private val LivePurple = Color(0xFFA855F7)
 private val CamBlue = Color(0xFF3B82F6)
 private val ReplayTeal = Color(0xFF14B8A6)
 private val PauseAmber = Color(0xFFF59E0B)
-private val ObsPanel = Color(0x0FFFFFFF)
+private val ObsPanel = Palette.veil(0x0F / 255f)
 
 @Composable
 fun ObsPage(state: UiState, vm: PerfViewModel) {
     val obs = state.stats?.obs
     Box(
         Modifier.fillMaxSize().background(
-            Brush.radialGradient(listOf(Color(0xFF1A1426), Color(0xFF080B0E)), radius = 1500f)
+            pageGlow(Color(0xFF1A1426), 1500f)
         )
     ) {
         if (obs == null || obs.status != "connected") {
@@ -115,7 +115,7 @@ private fun ObsConnected(obs: ObsState, state: UiState, vm: PerfViewModel) {
         Column(Modifier.weight(1.15f).fillMaxHeight()) {
             Box(
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color.Black)
-                    .border(1.dp, if (obs.streamActive) LivePurple else if (obs.recActive) RecRed else Color(0x22FFFFFF), RoundedCornerShape(12.dp)),
+                    .border(1.dp, if (obs.streamActive) LivePurple else if (obs.recActive) RecRed else Palette.veil(0x22 / 255f), RoundedCornerShape(12.dp)),
             ) {
                 val p = state.obsPreview
                 if (p != null) Image(p, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
@@ -175,7 +175,7 @@ private fun ObsConnected(obs: ObsState, state: UiState, vm: PerfViewModel) {
                             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                                 .background(if (cur) RecRed.copy(alpha = 0.28f) else ObsPanel)
-                                .border(1.dp, if (cur) RecRed else Color(0x14FFFFFF), RoundedCornerShape(10.dp))
+                                .border(1.dp, if (cur) RecRed else Palette.veil(0x14 / 255f), RoundedCornerShape(10.dp))
                                 .clickable { if (!cur) vm.obs("scene", value = name) }
                                 .padding(horizontal = 8.dp, vertical = 12.dp),
                         )
@@ -262,7 +262,7 @@ private fun AudioRow(i: ObsInput, vm: PerfViewModel) {
             )
             Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(28.dp).clip(CircleShape).background(if (i.muted) RecRed.copy(alpha = 0.25f) else Color(0x14FFFFFF))
+                Modifier.size(28.dp).clip(CircleShape).background(if (i.muted) RecRed.copy(alpha = 0.25f) else Palette.veil(0x14 / 255f))
                     .clickable { vm.obs("mute", input = i.name) },
                 contentAlignment = Alignment.Center,
             ) {

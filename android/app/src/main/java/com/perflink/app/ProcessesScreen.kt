@@ -48,8 +48,8 @@ import java.util.Locale
 
 private val ProcPink = Color(0xFFF472B6)
 private val ProcBlue = Color(0xFF60A5FA)
-private val ProcRowBg = Color(0x0FFFFFFF)
-private val ProcRowBorder = Color(0x14FFFFFF)
+private val ProcRowBg = Palette.veil(0x0F / 255f)
+private val ProcRowBorder = Palette.veil(0x14 / 255f)
 
 @Composable
 fun ProcessesPage(state: UiState) {
@@ -66,7 +66,7 @@ fun ProcessesPage(state: UiState) {
 
     Box(
         Modifier.fillMaxSize().background(
-            Brush.radialGradient(listOf(Color(0xFF0E2422), Color(0xFF080B0E)), radius = 1500f)
+            pageGlow(Color(0xFF0E2422), 1500f)
         )
     ) {
         Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 20.dp)) {
@@ -99,12 +99,12 @@ fun ProcessesPage(state: UiState) {
 
 @Composable
 private fun Segmented(byRam: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x14FFFFFF)).padding(3.dp)) {
+    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Palette.veil(0x14 / 255f)).padding(3.dp)) {
         listOf(false to "CPU", true to "RAM").forEach { (v, label) ->
             val sel = byRam == v
             Text(
                 label, color = if (sel) Palette.text else Palette.dim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (sel) Color(0x26FFFFFF) else Color.Transparent)
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (sel) Palette.veil(0x26 / 255f) else Color.Transparent)
                     .clickable { onChange(v) }.padding(horizontal = 16.dp, vertical = 5.dp),
             )
         }

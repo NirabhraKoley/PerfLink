@@ -71,7 +71,7 @@ fun BluetoothPage(state: UiState) {
     val b = state.stats?.bluetooth
     Box(
         Modifier.fillMaxSize().background(
-            Brush.radialGradient(listOf(Color(0xFF0C1A33), Color(0xFF080B0E)), radius = 1500f)
+            pageGlow(Color(0xFF0C1A33), 1500f)
         )
     ) {
         if (b == null) {
@@ -93,7 +93,7 @@ fun BluetoothPage(state: UiState) {
 @Composable
 private fun Panel(accent: Color, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x12FFFFFF))
+        modifier.clip(RoundedCornerShape(16.dp)).background(Palette.veil(0x12 / 255f))
             .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(16.dp)).padding(14.dp),
     ) { content() }
 }
@@ -115,7 +115,7 @@ private fun BluetoothPanel(b: BtState, modifier: Modifier) {
     Panel(BtBlue, modifier) {
         PanelHeader(UsbIcons.BLUETOOTH, "BLUETOOTH", BtBlue) {
             Row(verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x14FFFFFF)).padding(horizontal = 9.dp, vertical = 3.dp)) {
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(Palette.veil(0x14 / 255f)).padding(horizontal = 9.dp, vertical = 3.dp)) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(if (radioOn) BtGreen else BtRed))
                 Spacer(Modifier.width(5.dp))
                 Text(if (radioOn) "On" else "Off", color = Palette.text, fontSize = 11.sp)
@@ -177,8 +177,8 @@ private fun BtCard(d: BtDevice) {
     val c = btColor(d.type)
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(if (d.connected) Color(0x14FFFFFF) else Color(0x08FFFFFF))
-            .border(1.dp, if (d.connected) c.copy(alpha = 0.45f) else Color(0x14FFFFFF), RoundedCornerShape(12.dp))
+            .background(if (d.connected) Palette.veil(0x14 / 255f) else Palette.veil(0x08 / 255f))
+            .border(1.dp, if (d.connected) c.copy(alpha = 0.45f) else Palette.veil(0x14 / 255f), RoundedCornerShape(12.dp))
             .padding(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -282,7 +282,7 @@ private fun SignalBars(pct: Int) {
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         for (i in 1..4) {
             Box(Modifier.width(4.dp).height((4 + i * 3).dp).clip(RoundedCornerShape(1.dp))
-                .background(if (i <= lit) WifiTeal else Color(0x33FFFFFF)))
+                .background(if (i <= lit) WifiTeal else Palette.veil(0x33 / 255f)))
         }
     }
 }

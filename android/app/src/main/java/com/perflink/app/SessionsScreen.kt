@@ -39,14 +39,14 @@ import java.util.Locale
 
 private val ClaudeOrange = Color(0xFFE07A5F)
 private val GhBlue = Color(0xFF8AB4F8)
-private val RowBg = Color(0x12FFFFFF)
+private val RowBg = Palette.veil(0x12 / 255f)
 
 @Composable
 fun SessionsPage(state: UiState) {
     val ai = state.stats?.ai
     Box(
         Modifier.fillMaxSize().background(
-            Brush.radialGradient(listOf(Color(0xFF0D2526), Color(0xFF080B0E)), radius = 1400f)
+            pageGlow(Color(0xFF0D2526), 1400f)
         )
     ) {
         Row(Modifier.fillMaxSize().padding(start = 24.dp + DisconnectGap, end = 24.dp, top = 18.dp, bottom = 22.dp)) {

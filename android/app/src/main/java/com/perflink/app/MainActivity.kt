@@ -74,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -86,23 +87,48 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
+/**
+ * The app's colours. [light] switches the whole app between the dark and the light theme (the sun / moon
+ * button in the top bar; remembered on the phone): it's Compose state, so every screen redraws.
+ * The Clock and Mirror pages stay dark on purpose.
+ */
 object Palette {
-    val bg = Color(0xFF0B0E13)
-    val card = Color(0xFF141A22)
-    val cardBorder = Color(0xFF222B36)
-    val grid = Color(0x1FFFFFFF)
-    val track = Color(0xFF232C38)
-    val text = Color(0xFFE8EDF3)
-    val dim = Color(0xFF8A96A6)
-    val accent = Color(0xFF4FC3F7)
-    val good = Color(0xFF5BD68A)
-    val warn = Color(0xFFF2C14E)
-    val bad = Color(0xFFFF6B6B)
-    val gpu = Color(0xFFFF7A59)
-    val cpu = Color(0xFF7C9CFF)
-    val down = Color(0xFF4FC3F7)
-    val up = Color(0xFFB388FF)
-    val ping = Color(0xFF5BD68A)
+    var light by mutableStateOf(false)
+    private fun pick(dark: Long, lite: Long) = Color(if (light) lite else dark)
+    val bg get() = pick(0xFF0B0E13, 0xFFF1F4F8)
+    val card get() = pick(0xFF141A22, 0xFFFFFFFF)
+    val cardBorder get() = pick(0xFF222B36, 0xFFD9E0E8)
+    val grid get() = pick(0x1FFFFFFF, 0x1F0B1220)
+    val track get() = pick(0xFF232C38, 0xFFE2E8F0)
+    val text get() = pick(0xFFE8EDF3, 0xFF0F172A)
+    val dim get() = pick(0xFF8A96A6, 0xFF5A6678)
+    val accent get() = pick(0xFF4FC3F7, 0xFF0284C7)
+    val good get() = pick(0xFF5BD68A, 0xFF16A34A)
+    val warn get() = pick(0xFFF2C14E, 0xFFD97706)
+    val bad get() = pick(0xFFFF6B6B, 0xFFDC2626)
+    val gpu get() = pick(0xFFFF7A59, 0xFFEA580C)
+    val cpu get() = pick(0xFF7C9CFF, 0xFF4F46E5)
+    val down get() = pick(0xFF4FC3F7, 0xFF0284C7)
+    val up get() = pick(0xFFB388FF, 0xFF7C3AED)
+    val ping get() = pick(0xFF5BD68A, 0xFF16A34A)
+    /** The top bar. */
+    val bar get() = pick(0xFF080B10, 0xFFFFFFFF)
+    /** A see-through tint for fills and borders: white on the dark theme, black on the light one. */
+    fun veil(alpha: Float) = (if (light) Color.Black else Color.White).copy(alpha = alpha)
+}
+
+/** A page's background colours for the current theme (light: the same hues, very pale). */
+fun themed(colors: List<Color>): List<Color> =
+    if (Palette.light) colors.map { androidx.compose.ui.graphics.lerp(it, Color.White, 0.9f) } else colors
+
+/** A page's soft background glow ([darkTint] in the middle) in either theme. */
+fun pageGlow(darkTint: Color, radius: Float): Brush =
+    if (Palette.light) Brush.radialGradient(listOf(androidx.compose.ui.graphics.lerp(darkTint, Color.White, 0.88f), Palette.bg), radius = radius)
+    else Brush.radialGradient(listOf(darkTint, Color(0xFF080B0E)), radius = radius)
+
+/** The AMOLED screensaver (black screen, clock and date): the moon button in the top bar. */
+object Screensaver {
+    var on by mutableStateOf(false)
 }
 
 class MainActivity : ComponentActivity() {
@@ -124,6 +150,10 @@ class MainActivity : ComponentActivity() {
         startClockTab = intent?.getIntExtra("clock_tab", -1)?.takeIf { it in 0..2 }   // `--ei clock_tab 2`: Stopwatch
         startClockDigital = intent?.takeIf { it.hasExtra("clock_digital") }?.getBooleanExtra("clock_digital", false)
         startClockStyle = intent?.getIntExtra("clock_style", -1)?.takeIf { it in 0..4 }
+        Palette.light = getSharedPreferences("perflink", 0).getBoolean("theme_light", false)
+        // (testing) `--es theme light|dark` shows a theme without saving it; `--ez saver true` opens the screensaver
+        intent?.getStringExtra("theme")?.let { Palette.light = it == "light" }
+        if (intent?.getBooleanExtra("saver", false) == true) Screensaver.on = true
         // (testing) a local stand-in for GitHub's release API; only ever this phone itself
         intent?.getStringExtra("update_api")?.takeIf { it.startsWith("http://127.0.0.1:") }?.let { AppUpdater.testApi = it }
         // Updates itself from GitHub over the internet (no PC needed): shortly after opening, then every 6 hours
@@ -137,7 +167,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Palette.accent, background = Palette.bg, surface = Palette.card)) {
+            MaterialTheme(colorScheme = if (Palette.light)
+                androidx.compose.material3.lightColorScheme(primary = Palette.accent, background = Palette.bg, surface = Palette.card)
+            else darkColorScheme(primary = Palette.accent, background = Palette.bg, surface = Palette.card)) {
               ScaledToScreen {
                 val state by vm.state.collectAsStateWithLifecycle()
                 // Keep the screen awake while watching stats
@@ -160,6 +192,8 @@ class MainActivity : ComponentActivity() {
                         "- created by Nirabhra Koley", color = Palette.dim.copy(alpha = 0.55f), fontSize = 10.sp,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 4.dp),
                     )
+                    // AMOLED screensaver over everything, the watermark too (tap to go back)
+                    if (Screensaver.on) AmoledSaver { Screensaver.on = false }
                 }
               }
             }
@@ -299,7 +333,7 @@ fun ScaledToScreen(content: @Composable () -> Unit) {
         val density = Density(base.density * scale, base.fontScale.coerceIn(0.85f, 1.15f))
         Box(
             if (sim == null) Modifier.fillMaxSize()
-            else Modifier.size(w, h).border(1.dp, Color(0x66FFFFFF))
+            else Modifier.size(w, h).border(1.dp, Palette.veil(0x66 / 255f))
         ) {
             CompositionLocalProvider(LocalDensity provides density) { content() }
         }
@@ -465,12 +499,18 @@ private const val HOME_ICON = "M3.5 11L12 4l8.5 7 M6 9.5V20h4.5v-5.5h3V20H18V9.5
 /** Small round house button that jumps back to the Home page. */
 @Composable
 fun HomeButton(modifier: Modifier = Modifier.size(34.dp), onClick: () -> Unit) {
+    BarIconButton(HOME_ICON, "Home", modifier, onClick)
+}
+
+/** A round icon button in the top bar's style (Home, screensaver, theme). */
+@Composable
+fun BarIconButton(icon: String, label: String, modifier: Modifier = Modifier.size(30.dp), onClick: () -> Unit) {
     Box(
-        modifier.clip(CircleShape).background(Color(0xCC1A222C))
-            .border(1.dp, Color(0x33FFFFFF), CircleShape).clickable { onClick() },
+        modifier.clip(CircleShape).background(Palette.card.copy(alpha = 0.8f))
+            .border(1.dp, Palette.veil(0.2f), CircleShape).clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
-        Image(rememberVectorPainter(lineIcon(HOME_ICON)), contentDescription = "Home", modifier = Modifier.size(18.dp),
+        Image(rememberVectorPainter(lineIcon(icon)), contentDescription = label, modifier = Modifier.size(18.dp),
             colorFilter = ColorFilter.tint(Palette.text))
     }
 }
@@ -479,8 +519,8 @@ fun HomeButton(modifier: Modifier = Modifier.size(34.dp), onClick: () -> Unit) {
 @Composable
 fun TopBar(page: Page, showHome: Boolean, onDisconnect: () -> Unit, onHome: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(TopBarHeight).background(Color(0xFF080B10))
-            .drawBehind { drawLine(Color(0x14FFFFFF), Offset(0f, size.height - 1f), Offset(size.width, size.height - 1f), 1f) }
+        Modifier.fillMaxWidth().height(TopBarHeight).background(Palette.bar)
+            .drawBehind { drawLine(Palette.veil(0.08f), Offset(0f, size.height - 1f), Offset(size.width, size.height - 1f), 1f) }
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -490,6 +530,15 @@ fun TopBar(page: Page, showHome: Boolean, onDisconnect: () -> Unit, onHome: () -
         Spacer(Modifier.width(8.dp))
         Text(page.title, color = Color(page.color), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp,
             maxLines = 1, modifier = Modifier.weight(1f))
+        // AMOLED screensaver, then light / dark theme, then Home
+        BarIconButton(SAVER_ICON, "AMOLED screensaver") { Screensaver.on = true }
+        Spacer(Modifier.width(8.dp))
+        val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("perflink", 0)
+        BarIconButton(if (Palette.light) MOON_ICON else SUN_ICON, if (Palette.light) "Dark theme" else "Light theme") {
+            Palette.light = !Palette.light
+            prefs.edit().putBoolean("theme_light", Palette.light).apply()
+        }
+        Spacer(Modifier.width(8.dp))
         if (showHome) HomeButton(Modifier.size(30.dp), onClick = onHome) else Spacer(Modifier.size(30.dp))
     }
 }
@@ -502,6 +551,10 @@ val HomeButtonGap = 16.dp
 /** Space each page's top-left title leaves for the Disconnect button (on top of the page's own padding). */
 val DisconnectGap = 0.dp
 
+// a screen with "z z" (screensaver), a sun (light theme), a moon (dark theme)
+private const val SAVER_ICON = "M3.5 5.5h17v11h-17z M9 20.5h6 M12 16.5v4 M8.5 9h2.2l-2.2 3h2.2 M13.3 8h2.2l-2.2 3h2.2"
+private const val SUN_ICON = "M12 2.8v2 M12 19.2v2 M2.8 12h2 M19.2 12h2 M5.5 5.5l1.4 1.4 M17.1 17.1l1.4 1.4 M5.5 18.5l1.4-1.4 M17.1 6.9l1.4-1.4 M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8z"
+private const val MOON_ICON = "M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.2 6.2 0 0 0 10.1 10.1z"
 private const val POWER_ICON = "M12 3.5v8 M7 6.6a7.2 7.2 0 1 0 10 0"
 
 /** Small round power button that disconnects from the PC (after asking). */
@@ -789,7 +842,7 @@ fun RamModules(ram: Ram) {
     Spacer(Modifier.height(4.dp))
     ram.modules.forEachIndexed { i, m ->
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(6.dp)).background(Color(0x0DFFFFFF))
+            Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(6.dp)).background(Palette.veil(0x0D / 255f))
                 .padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

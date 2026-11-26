@@ -47,10 +47,10 @@ fun WeatherPage(state: UiState) {
     val day = d?.now?.isDay ?: true
     Box(
         Modifier.fillMaxSize().background(
-            Brush.linearGradient(
+            Brush.linearGradient(themed(
                 if (day) listOf(Color(0xFF0D2236), Color(0xFF0A1622), Color(0xFF081018))
                 else listOf(Color(0xFF0B0F24), Color(0xFF0A0D1A), Color(0xFF07090F))
-            )
+            ))
         )
     ) {
         if (d == null) {
@@ -84,7 +84,7 @@ private fun Header(d: WeatherDetail) {
             else -> "fixed city"
         }
         Text(src, color = Palette.dim, fontSize = 10.sp, maxLines = 1,
-            modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x14FFFFFF)).padding(horizontal = 7.dp, vertical = 2.dp))
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Palette.veil(0x14 / 255f)).padding(horizontal = 7.dp, vertical = 2.dp))
         d.updated?.let {
             Spacer(Modifier.width(8.dp))
             Text("updated ${ago(System.currentTimeMillis() / 1000.0 - it)}", color = Palette.dim, fontSize = 10.sp, maxLines = 1)
@@ -129,7 +129,7 @@ private fun ColumnScope.NowBlock(d: WeatherDetail) {
 @Composable
 private fun Tile(label: String, value: String, sub: String?, accent: Color?, modifier: Modifier) {
     Column(
-        modifier.fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(Color(0x12FFFFFF))
+        modifier.fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(Palette.veil(0x12 / 255f))
             .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalArrangement = Arrangement.Center,
     ) {
@@ -156,7 +156,7 @@ private fun aqiColor(label: String, aqi: Double?): Color? = if (label != "AIR QU
 private fun ColumnScope.Forecast(d: WeatherDetail) {
     Text("NEXT 24 HOURS", color = Palette.dim, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     Spacer(Modifier.height(3.dp))
-    LazyRow(Modifier.fillMaxWidth().height(84.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x0FFFFFFF)),
+    LazyRow(Modifier.fillMaxWidth().height(84.dp).clip(RoundedCornerShape(10.dp)).background(Palette.veil(0x0F / 255f)),
         horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         items(d.hourly) { h ->
             Column(Modifier.width(42.dp).padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -196,7 +196,7 @@ private fun dayName(date: String, i: Int): String = if (i == 0) "Today" else run
 private fun RangeBar(low: Double?, high: Double?, weekLo: Double, weekHi: Double, modifier: Modifier) {
     Canvas(modifier) {
         val r = CornerRadius(size.height / 2)
-        drawRoundRect(Color(0x1FFFFFFF), cornerRadius = r)
+        drawRoundRect(Palette.veil(0x1F / 255f), cornerRadius = r)
         if (low == null || high == null || weekHi <= weekLo) return@Canvas
         val x0 = ((low - weekLo) / (weekHi - weekLo)).toFloat() * size.width
         val x1 = ((high - weekLo) / (weekHi - weekLo)).toFloat() * size.width

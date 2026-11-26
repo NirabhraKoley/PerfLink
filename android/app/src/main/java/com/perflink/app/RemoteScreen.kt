@@ -58,7 +58,7 @@ private val RemoteAccent = Color(0xFF7C9CFF)
 fun RemotePage(state: UiState, vm: PerfViewModel) {
     Box(
         Modifier.fillMaxSize().background(
-            Brush.linearGradient(listOf(Color(0xFF0B0F17), Color(0xFF10162A), Color(0xFF0A0E14)))
+            Brush.linearGradient(themed(listOf(Color(0xFF0B0F17), Color(0xFF10162A), Color(0xFF0A0E14))))
         )
     ) {
         Column(Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 16.dp)) {
@@ -83,7 +83,7 @@ private fun Touchpad(vm: PerfViewModel, modifier: Modifier) {
     val haptic = LocalHapticFeedback.current
     Column(modifier) {
         Box(
-            Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x12FFFFFF))
+            Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.veil(0x12 / 255f))
                 .border(1.dp, RemoteAccent.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
                 .pointerInput(Unit) { touchpadGestures(vm) },
             contentAlignment = Alignment.Center,
@@ -155,7 +155,7 @@ private fun PadButton(label: String, modifier: Modifier, active: Boolean = false
     val click by rememberUpdatedState(onClick)
     Box(
         modifier.fillMaxHeight().clip(RoundedCornerShape(10.dp))
-            .background(if (active) RemoteAccent.copy(alpha = 0.35f) else Color(0x1AFFFFFF))
+            .background(if (active) RemoteAccent.copy(alpha = 0.35f) else Palette.veil(0x1A / 255f))
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false).consume()
@@ -222,7 +222,7 @@ private fun Keyboard(vm: PerfViewModel, modifier: Modifier) {
     }
 
     Column(
-        modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x0DFFFFFF)).padding(5.dp)
+        modifier.clip(RoundedCornerShape(14.dp)).background(Palette.veil(0x0D / 255f)).padding(5.dp)
             // keep the page from swiping when a finger slides across the keys
             .pointerInput(Unit) {
                 awaitPointerEventScope {
@@ -261,9 +261,9 @@ private fun RowScope.Key(label: String, k: K, active: Boolean, small: Boolean, o
             .background(
                 when {
                     active -> RemoteAccent.copy(alpha = 0.55f)
-                    held -> Color(0x40FFFFFF)
-                    k.kind == Kind.Char -> Color(0x1FFFFFFF)
-                    else -> Color(0x12FFFFFF)
+                    held -> Palette.veil(0x40 / 255f)
+                    k.kind == Kind.Char -> Palette.veil(0x1F / 255f)
+                    else -> Palette.veil(0x12 / 255f)
                 }
             )
             .pointerInput(k) {
